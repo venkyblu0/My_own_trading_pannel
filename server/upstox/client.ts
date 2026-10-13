@@ -1,0 +1,431 @@
+import fs from 'fs';
+import path from 'path';
+import zlib from 'zlib';
+import { Candle, Instrument, CandleLogEntry } from '../types.js';
+import { getTimeframeConfig, splitDateRange, mergeAndSortCandles } from '../utils/chunking.js';
+
+const CACHE_DIR = path.resolve(process.cwd(), 'server', 'cache');
+const CANDLES_CACHE_DIR = path.resolve(CACHE_DIR, 'candles');
+
+// Ensure cache directories exist
+if (!fs.existsSync(CACHE_DIR)) {
+  fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
+if (!fs.existsSync(CANDLES_CACHE_DIR)) {
+  fs.mkdirSync(CANDLES_CACHE_DIR, { recursive: true });
+}
+
+// In-memory logs of data requests for Phase 1 "Logs" tab
+const requestLogs: CandleLogEntry[] = [];
+
+export function getRequestLogs(): CandleLogEntry[] {
+  return [...requestLogs].slice(-100); // return last 100 entries
+}
+
+export function addRequestLog(entry: CandleLogEntry): void {
+  requestLogs.unshift(entry);
+  if (requestLogs.length > 200) {
+    requestLogs.pop();
+  }
+}
+
+// Pre-seeded high quality equity & index symbols so search works instantaneously
+const PRESEEDED_INSTRUMENTS: Instrument[] = [
+  { key: 'NSE_EQ|INE002A01018', symbol: 'RELIANCE', name: 'RELIANCE INDUSTRIES LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE040A01034', symbol: 'HDFCBANK', name: 'HDFC BANK LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE090A01021', symbol: 'ICICIBANK', name: 'ICICI BANK LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE009A01021', symbol: 'INFY', name: 'INFOSYS LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE467B01029', symbol: 'TCS', name: 'TATA CONSULTANCY SERVICES LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE062A01020', symbol: 'SBIN', name: 'STATE BANK OF INDIA', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE154A01025', symbol: 'ITC', name: 'ITC LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE030A01027', symbol: 'HINDUNILVR', name: 'HINDUSTAN UNILEVER LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE238A01034', symbol: 'AXISBANK', name: 'AXIS BANK LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE237A01028', symbol: 'KOTAKBANK', name: 'KOTAK MAHINDRA BANK LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE018A01030', symbol: 'LT', name: 'LARSEN & TOUBRO LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE397D01024', symbol: 'BHARTIARTL', name: 'BHARTI AIRTEL LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE155A01022', symbol: 'TATAMOTORS', name: 'TATA MOTORS LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE081A01012', symbol: 'TATASTEEL', name: 'TATA STEEL LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE752E01010', symbol: 'POWERGRID', name: 'POWER GRID CORP OF INDIA LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE733E01010', symbol: 'NTPC', name: 'NTPC LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE216A01030', symbol: 'BAJFINANCE', name: 'BAJAJ FINANCE LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE296A01024', symbol: 'BAJAJFINSV', name: 'BAJAJ FINSERV LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE423A01024', symbol: 'ADANIENT', name: 'ADANI ENTERPRISES LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE742F01042', symbol: 'ADANIPORTS', name: 'ADANI PORTS & SEZ LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE044A01036', symbol: 'SUNPHARMA', name: 'SUN PHARMACEUTICAL IND LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE075A01022', symbol: 'WIPRO', name: 'WIPRO LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE860A01027', symbol: 'HCLTECH', name: 'HCL TECHNOLOGIES LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE585B01010', symbol: 'MARUTI', name: 'MARUTI SUZUKI INDIA LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE101A01026', symbol: 'M&M', name: 'MAHINDRA & MAHINDRA LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE021A01026', symbol: 'ASIANPAINT', name: 'ASIAN PAINTS LTD', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_EQ|INE121A01024', symbol: 'CHOLAFIN', name: 'CHOLAMANDALAM INVEST & FIN', exchange: 'NSE', segment: 'NSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'NSE_INDEX|Nifty 50', symbol: 'NIFTY 50', name: 'Nifty 50 Index', exchange: 'NSE', segment: 'NSE_INDEX', type: 'INDEX', tickSize: 0.05, lotSize: 25 },
+  { key: 'NSE_INDEX|Nifty Bank', symbol: 'BANKNIFTY', name: 'Nifty Bank Index', exchange: 'NSE', segment: 'NSE_INDEX', type: 'INDEX', tickSize: 0.05, lotSize: 15 },
+  { key: 'BSE_EQ|500325', symbol: 'RELIANCE', name: 'RELIANCE INDUSTRIES LTD', exchange: 'BSE', segment: 'BSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'BSE_EQ|500180', symbol: 'HDFCBANK', name: 'HDFC BANK LTD', exchange: 'BSE', segment: 'BSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'BSE_EQ|532174', symbol: 'ICICIBANK', name: 'ICICI BANK LTD', exchange: 'BSE', segment: 'BSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'BSE_EQ|500209', symbol: 'INFY', name: 'INFOSYS LTD', exchange: 'BSE', segment: 'BSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+  { key: 'BSE_EQ|532540', symbol: 'TCS', name: 'TATA CONSULTANCY SERVICES LTD', exchange: 'BSE', segment: 'BSE_EQ', type: 'EQUITY', tickSize: 0.05, lotSize: 1 },
+];
+
+let instrumentsMemoryCache: Instrument[] = [...PRESEEDED_INSTRUMENTS];
+let isDownloadingInstruments = false;
+
+/**
+ * Downloads and parses the Upstox instrument master files.
+ * Caches them on disk for 24 hours.
+ */
+export async function loadInstrumentMaster(): Promise<void> {
+  const nseCacheFile = path.resolve(CACHE_DIR, 'instruments_NSE.json');
+  const now = Date.now();
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+  // Check if cache file exists and is recent (< 24 hours)
+  if (fs.existsSync(nseCacheFile)) {
+    try {
+      const stats = fs.statSync(nseCacheFile);
+      if (now - stats.mtimeMs < ONE_DAY_MS) {
+        const data = JSON.parse(fs.readFileSync(nseCacheFile, 'utf-8'));
+        if (Array.isArray(data) && data.length > 0) {
+          instrumentsMemoryCache = data;
+          return;
+        }
+      }
+    } catch {
+      // If reading cache fails, proceed to download
+    }
+  }
+
+  if (isDownloadingInstruments) return;
+  isDownloadingInstruments = true;
+
+  try {
+    const urls = [
+      'https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz',
+      'https://assets.upstox.com/market-quote/instruments/exchange/BSE.json.gz',
+    ];
+
+    const allInstruments: Instrument[] = [];
+
+    for (const url of urls) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const arrayBuffer = await res.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const decompressed = zlib.gunzipSync(buffer);
+        const rawItems = JSON.parse(decompressed.toString('utf-8'));
+
+        if (Array.isArray(rawItems)) {
+          for (const item of rawItems) {
+            if (!item.instrument_key || !item.trading_symbol) continue;
+            allInstruments.push({
+              key: item.instrument_key,
+              symbol: item.trading_symbol,
+              name: item.name || item.trading_symbol,
+              exchange: (item.exchange || 'NSE') as any,
+              segment: item.segment || '',
+              type: item.instrument_type || item.type || 'EQUITY',
+              tickSize: Number(item.tick_size) || 0.05,
+              lotSize: Number(item.lot_size) || 1,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn(`Could not load instrument master from ${url}:`, err);
+      }
+    }
+
+    if (allInstruments.length > 0) {
+      // Merge with preseeded items to ensure no missing critical instruments
+      const keySet = new Set(allInstruments.map((i) => i.key));
+      for (const p of PRESEEDED_INSTRUMENTS) {
+        if (!keySet.has(p.key)) {
+          allInstruments.push(p);
+        }
+      }
+      instrumentsMemoryCache = allInstruments;
+      fs.writeFileSync(nseCacheFile, JSON.stringify(allInstruments));
+    }
+  } catch (err) {
+    console.error('Failed to update instrument master:', err);
+  } finally {
+    isDownloadingInstruments = false;
+  }
+}
+
+// Background initialize
+loadInstrumentMaster().catch(() => {});
+
+/**
+ * Searches instruments by exchange, query string, and derivative filter.
+ */
+export function searchInstruments(
+  query: string,
+  exchange: string = 'NSE',
+  includeDerivatives: boolean = false
+): Instrument[] {
+  const q = (query || '').trim().toLowerCase();
+  const ex = exchange.toUpperCase();
+
+  return instrumentsMemoryCache
+    .filter((inst) => {
+      // Filter exchange
+      if (ex === 'NSE INDICES' || ex === 'NSE_INDEX') {
+        if (inst.segment !== 'NSE_INDEX' && inst.type !== 'INDEX') return false;
+      } else if (ex === 'NSE') {
+        if (inst.exchange !== 'NSE') return false;
+      } else if (ex === 'BSE') {
+        if (inst.exchange !== 'BSE') return false;
+      } else if (ex === 'MCX') {
+        if (inst.exchange !== 'MCX') return false;
+      }
+
+      // Filter derivatives (default equity & index only)
+      if (!includeDerivatives) {
+        const isEquity = inst.type === 'EQUITY' || inst.segment.includes('_EQ');
+        const isIndex = inst.type === 'INDEX' || inst.segment.includes('_INDEX');
+        if (!isEquity && !isIndex) return false;
+      }
+
+      // Query match: match symbol or name
+      if (!q) return true;
+      const symbolMatch = inst.symbol.toLowerCase().includes(q);
+      const nameMatch = inst.name.toLowerCase().includes(q);
+      return symbolMatch || nameMatch;
+    })
+    .sort((a, b) => {
+      // Exact symbol match first, then starts with symbol, then alphabetical
+      const aExact = a.symbol.toLowerCase() === q;
+      const bExact = b.symbol.toLowerCase() === q;
+      if (aExact && !bExact) return -1;
+      if (!aExact && bExact) return 1;
+
+      const aStarts = a.symbol.toLowerCase().startsWith(q);
+      const bStarts = b.symbol.toLowerCase().startsWith(q);
+      if (aStarts && !bStarts) return -1;
+      if (!aStarts && bStarts) return 1;
+
+      return a.symbol.localeCompare(b.symbol);
+    })
+    .slice(0, 20);
+}
+
+/**
+ * Sleep helper for rate limiting and backoff.
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Fetches historical candles from Upstox API v3 for a single date chunk.
+ * Implements exponential backoff on HTTP 429.
+ */
+async function fetchCandleChunk(
+  instrumentKey: string,
+  unit: string,
+  interval: number,
+  toDate: string,
+  fromDate: string,
+  token: string
+): Promise<Array<[string, number, number, number, number, number, number?]>> {
+  const encodedKey = encodeURIComponent(instrumentKey);
+  const url = `https://api.upstox.com/v3/historical-candle/${encodedKey}/${unit}/${interval}/${toDate}/${fromDate}`;
+
+  let retries = 3;
+  let delayMs = 300;
+
+  while (retries >= 0) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.status === 429) {
+        // Rate limited, backoff
+        await sleep(delayMs);
+        delayMs *= 2;
+        retries--;
+        continue;
+      }
+
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => '');
+        throw new Error(`Upstox API error (${res.status}): ${errBody || res.statusText}`);
+      }
+
+      const json = await res.json();
+      if (json.status === 'success' && json.data && Array.isArray(json.data.candles)) {
+        return json.data.candles;
+      }
+      return [];
+    } catch (err: any) {
+      if (retries === 0) throw err;
+      retries--;
+      await sleep(delayMs);
+      delayMs *= 2;
+    }
+  }
+
+  return [];
+}
+
+/**
+ * Fetches today's intraday candle if available
+ */
+async function fetchIntradayToday(
+  instrumentKey: string,
+  unit: string,
+  interval: number,
+  token: string
+): Promise<Array<[string, number, number, number, number, number, number?]>> {
+  try {
+    const encodedKey = encodeURIComponent(instrumentKey);
+    const url = `https://api.upstox.com/v3/historical-candle/intraday/${encodedKey}/${unit}/${interval}`;
+    const res = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) return [];
+    const json = await res.json();
+    if (json.status === 'success' && json.data && Array.isArray(json.data.candles)) {
+      return json.data.candles;
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Main function to fetch candles across date ranges with chunking and disk cache.
+ */
+export async function getHistoricalCandles(
+  instrumentKey: string,
+  tf: string,
+  fromDate: string,
+  toDate: string
+): Promise<{ candles: Candle[]; cached: boolean; durationMs: number }> {
+  const startTime = Date.now();
+  const token = process.env.UPSTOX_TOKEN;
+
+  // Hard Rule 1: Secrets must be set on server. Never send token.
+  if (!token) {
+    const errorEntry: CandleLogEntry = {
+      id: Math.random().toString(36).substring(2, 9),
+      timestamp: Date.now(),
+      symbol: instrumentKey,
+      timeframe: tf,
+      from: fromDate,
+      to: toDate,
+      durationMs: Date.now() - startTime,
+      candleCount: 0,
+      cached: false,
+      status: 'error',
+      errorMessage: 'UPSTOX_TOKEN secret not set',
+    };
+    addRequestLog(errorEntry);
+    throw new Error('UPSTOX_TOKEN secret not set');
+  }
+
+  const tfConfig = getTimeframeConfig(tf);
+  const chunks = splitDateRange(tfConfig, fromDate, toDate);
+
+  // Generate disk cache key
+  const safeKey = instrumentKey.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const cacheKey = `${safeKey}_${tf}_${fromDate}_${toDate}.json`;
+  const cachePath = path.resolve(CANDLES_CACHE_DIR, cacheKey);
+
+  // Check if fully cached (only for completed ranges; today might have newer data)
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const isQueryingToday = toDate >= todayStr;
+
+  if (!isQueryingToday && fs.existsSync(cachePath)) {
+    try {
+      const cachedData = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+      if (Array.isArray(cachedData)) {
+        const durationMs = Date.now() - startTime;
+        addRequestLog({
+          id: Math.random().toString(36).substring(2, 9),
+          timestamp: Date.now(),
+          symbol: instrumentKey,
+          timeframe: tf,
+          from: fromDate,
+          to: toDate,
+          durationMs,
+          candleCount: cachedData.length,
+          cached: true,
+          status: 'ok',
+        });
+        return { candles: cachedData, cached: true, durationMs };
+      }
+    } catch {
+      // cache read failed, proceed to fetch
+    }
+  }
+
+  const rawChunks: Array<Array<[string, number, number, number, number, number, number?]>> = [];
+
+  for (const chunk of chunks) {
+    // Respect rate limit: ~5 req/sec = 200ms delay between calls
+    await sleep(150);
+    const chunkCandles = await fetchCandleChunk(
+      instrumentKey,
+      tfConfig.unit,
+      tfConfig.interval,
+      chunk.to,
+      chunk.from,
+      token
+    );
+    rawChunks.push(chunkCandles);
+  }
+
+  // If querying today and intraday interval, also attempt intraday-today endpoint
+  if (isQueryingToday && (tfConfig.unit === 'minutes' || tfConfig.unit === 'hours')) {
+    const todayCandles = await fetchIntradayToday(
+      instrumentKey,
+      tfConfig.unit,
+      tfConfig.interval,
+      token
+    );
+    if (todayCandles.length > 0) {
+      rawChunks.push(todayCandles);
+    }
+  }
+
+  const sortedCandles = mergeAndSortCandles(rawChunks);
+  const durationMs = Date.now() - startTime;
+
+  // Cache permanently on disk if not querying today or if range is in past
+  if (!isQueryingToday && sortedCandles.length > 0) {
+    try {
+      fs.writeFileSync(cachePath, JSON.stringify(sortedCandles));
+    } catch (e) {
+      console.warn('Failed to write candle disk cache:', e);
+    }
+  }
+
+  addRequestLog({
+    id: Math.random().toString(36).substring(2, 9),
+    timestamp: Date.now(),
+    symbol: instrumentKey,
+    timeframe: tf,
+    from: fromDate,
+    to: toDate,
+    durationMs,
+    candleCount: sortedCandles.length,
+    cached: false,
+    status: 'ok',
+  });
+
+  return {
+    candles: sortedCandles,
+    cached: false,
+    durationMs,
+  };
+}
