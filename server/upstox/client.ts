@@ -3,6 +3,7 @@ import path from 'path';
 import zlib from 'zlib';
 import { Candle, Instrument, CandleLogEntry } from '../types.js';
 import { getTimeframeConfig, splitDateRange, mergeAndSortCandles } from '../utils/chunking.js';
+import { LiveQuote, createQuoteLoader, fetchFullQuotes } from './quotes.js';
 
 const CACHE_DIR = path.resolve(process.cwd(), 'server', 'cache');
 const CANDLES_CACHE_DIR = path.resolve(CACHE_DIR, 'candles');
@@ -261,18 +262,25 @@ export async function setTokenDirect(rawToken: string) {
   };
 }
 
-export interface LiveQuote {
-  key: string;
-  symbol: string;
-  lastPrice: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-  change: number;
-  changePct: number;
-  timestamp: number;
+export type { LiveQuote } from './quotes.js';
+
+// Concurrent quote requests (chart poll + watchlist refresh) share one Upstox call
+const loadQuotes = createQuoteLoader(async (keys) => {
+  const token = getActiveToken();
+  if (!token) return new Map<string, LiveQuote>();
+  return fetchFullQuotes(keys, token);
+});
+
+/**
+ * Fetches real-time full market quotes for several instruments.
+ * Instruments without a quote are left out of the result.
+ */
+export async function getMarketQuotes(instrumentKeys: string[]): Promise<Record<string, LiveQuote>> {
+  const token = getActiveToken();
+  if (!token) {
+    throw new Error('UPSTOX_TOKEN secret not set');
+  }
+  return Object.fromEntries(await loadQuotes(instrumentKeys));
 }
 
 /**
@@ -285,79 +293,39 @@ export async function getMarketQuote(instrumentKey: string): Promise<LiveQuote |
     throw new Error('UPSTOX_TOKEN secret not set');
   }
 
-  const encodedKey = encodeURIComponent(instrumentKey);
-  const url = `https://api.upstox.com/v2/market-quote/quotes?instrument_key=${encodedKey}`;
-
   try {
-    const res = await fetch(url, {
+    const quote = (await loadQuotes([instrumentKey])).get(instrumentKey);
+    if (quote) return quote;
+
+    // If full quote is restricted or error, try LTP endpoint
+    const encodedKey = encodeURIComponent(instrumentKey);
+    const ltpUrl = `https://api.upstox.com/v2/market-quote/ltp?instrument_key=${encodedKey}`;
+    const ltpRes = await fetch(ltpUrl, {
       headers: {
         Accept: 'application/json',
         Authorization: `Bearer ${token}`,
       },
     });
-
-    if (!res.ok) {
-      // If full quote is restricted or error, try LTP endpoint
-      const ltpUrl = `https://api.upstox.com/v2/market-quote/ltp?instrument_key=${encodedKey}`;
-      const ltpRes = await fetch(ltpUrl, {
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      if (ltpRes.ok) {
-        const ltpJson = await ltpRes.json();
-        const first = Object.values(ltpJson?.data || {})[0] as any;
-        if (first && typeof first.last_price === 'number') {
-          return {
-            key: instrumentKey,
-            symbol: first.trading_symbol || instrumentKey.split('|')[1] || instrumentKey,
-            lastPrice: first.last_price,
-            open: first.last_price,
-            high: first.last_price,
-            low: first.last_price,
-            close: first.last_price,
-            volume: 0,
-            change: 0,
-            changePct: 0,
-            timestamp: Date.now(),
-          };
-        }
+    if (ltpRes.ok) {
+      const ltpJson = await ltpRes.json();
+      const first = Object.values(ltpJson?.data || {})[0] as any;
+      if (first && typeof first.last_price === 'number') {
+        return {
+          key: instrumentKey,
+          symbol: first.trading_symbol || instrumentKey.split('|')[1] || instrumentKey,
+          lastPrice: first.last_price,
+          open: first.last_price,
+          high: first.last_price,
+          low: first.last_price,
+          close: first.last_price,
+          volume: 0,
+          change: 0,
+          changePct: 0,
+          timestamp: Date.now(),
+        };
       }
-      return null;
     }
-
-    const json = await res.json();
-    if (json.status !== 'success' || !json.data) return null;
-
-    const dataObj = json.data;
-    const item = Object.values(dataObj)[0] as any;
-    if (!item) return null;
-
-    const lastPrice = Number(item.last_price) || 0;
-    const ohlc = item.ohlc || {};
-    const open = Number(ohlc.open) || lastPrice;
-    const high = Number(ohlc.high) || lastPrice;
-    const low = Number(ohlc.low) || lastPrice;
-    const prevClose = Number(ohlc.close) || lastPrice;
-    const volume = Number(item.volume) || 0;
-    const change = Number(item.net_change ?? (lastPrice - prevClose));
-    const changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
-    const timestamp = item.timestamp ? new Date(item.timestamp).getTime() : Date.now();
-
-    return {
-      key: instrumentKey,
-      symbol: item.trading_symbol || instrumentKey.split('|')[1] || instrumentKey,
-      lastPrice,
-      open,
-      high,
-      low,
-      close: lastPrice,
-      volume,
-      change,
-      changePct,
-      timestamp,
-    };
+    return null;
   } catch (err) {
     console.warn(`Error fetching market quote for ${instrumentKey}:`, err);
     return null;

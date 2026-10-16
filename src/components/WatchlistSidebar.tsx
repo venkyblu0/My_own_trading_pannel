@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, TrendingUp, TrendingDown, Info, ExternalLink } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore.ts';
 import { formatINR, formatPct } from '../lib/formatters.ts';
@@ -11,6 +11,7 @@ export const WatchlistSidebar: React.FC = () => {
     selectedInstrument,
     setSelectedInstrument,
     removeFromWatchlist,
+    refreshWatchlistQuotes,
     lastClose,
     sessionHigh,
     sessionLow,
@@ -40,6 +41,13 @@ export const WatchlistSidebar: React.FC = () => {
     }
     return list;
   }, [watchlist, watchlistSort]);
+
+  // Load real quotes as soon as the watchlist mounts and whenever its symbols change;
+  // ChartPane's live-quote poll keeps them fresh after that
+  const watchlistKeys = watchlist.map((w) => w.key).join(',');
+  useEffect(() => {
+    refreshWatchlistQuotes();
+  }, [watchlistKeys]);
 
   if (!isWatchlistOpen) return null;
 
