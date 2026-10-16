@@ -23,17 +23,20 @@ export const WatchlistSidebar: React.FC = () => {
 
   const sortedWatchlist = React.useMemo(() => {
     const list = [...watchlist];
+    // Symbols without market data yet (null) always sort last
+    const byValue = (a: number | null, b: number | null, dir: 1 | -1) =>
+      a === null ? (b === null ? 0 : 1) : b === null ? -1 : (a - b) * dir;
     if (watchlistSort === 'gainers') {
-      return list.sort((a, b) => b.changePct - a.changePct);
+      return list.sort((a, b) => byValue(a.changePct, b.changePct, -1));
     }
     if (watchlistSort === 'losers') {
-      return list.sort((a, b) => a.changePct - b.changePct);
+      return list.sort((a, b) => byValue(a.changePct, b.changePct, 1));
     }
     if (watchlistSort === 'symbol') {
       return list.sort((a, b) => a.symbol.localeCompare(b.symbol));
     }
     if (watchlistSort === 'price') {
-      return list.sort((a, b) => b.lastPrice - a.lastPrice);
+      return list.sort((a, b) => byValue(a.lastPrice, b.lastPrice, -1));
     }
     return list;
   }, [watchlist, watchlistSort]);
@@ -72,7 +75,8 @@ export const WatchlistSidebar: React.FC = () => {
       <div className="flex-1 overflow-y-auto divide-y divide-[#1F2630]/60">
         {sortedWatchlist.map((item) => {
           const isSelected = selectedInstrument.symbol === item.symbol;
-          const isPositive = item.change >= 0;
+          const hasChange = item.changePct !== null;
+          const isPositive = (item.changePct ?? 0) >= 0;
 
           return (
             <div
@@ -119,10 +123,11 @@ export const WatchlistSidebar: React.FC = () => {
                   </div>
                   <div
                     className={`font-mono text-[10px] flex items-center justify-end ${
-                      isPositive ? 'text-[#26A69A]' : 'text-[#EF5350]'
+                      !hasChange ? 'text-[#8B949E]' : isPositive ? 'text-[#26A69A]' : 'text-[#EF5350]'
                     }`}
                   >
-                    {isPositive ? <TrendingUp className="w-2.5 h-2.5 mr-0.5" /> : <TrendingDown className="w-2.5 h-2.5 mr-0.5" />}
+                    {hasChange &&
+                      (isPositive ? <TrendingUp className="w-2.5 h-2.5 mr-0.5" /> : <TrendingDown className="w-2.5 h-2.5 mr-0.5" />)}
                     {formatPct(item.changePct)}
                   </div>
                 </div>

@@ -43,9 +43,9 @@ export interface WatchlistItem {
   symbol: string;
   name: string;
   exchange: string;
-  lastPrice: number;
-  change: number;
-  changePct: number;
+  lastPrice: number | null; // null until real market data arrives
+  change: number | null;
+  changePct: number | null;
 }
 
 export interface CandleLogEntry {
