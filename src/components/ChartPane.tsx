@@ -380,6 +380,9 @@ export const ChartPane: React.FC = () => {
       if (!isMounted) return;
       const currentKey = selectedInstrumentRef.current.key;
 
+      // Refresh every watchlist row on the same tick; the server folds both requests into one Upstox call
+      useAppStore.getState().refreshWatchlistQuotes();
+
       try {
         const res = await fetch(`/api/quote?key=${encodeURIComponent(currentKey)}`);
         if (!res.ok) return;

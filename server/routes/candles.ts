@@ -1,7 +1,39 @@
 import { Router } from 'express';
-import { getHistoricalCandles, getMarketQuote } from '../upstox/client.js';
+import { getHistoricalCandles, getMarketQuote, getMarketQuotes } from '../upstox/client.js';
 
 export const candlesRouter = Router();
+
+// GET /api/quotes?keys=NSE_EQ|INE002A01018,NSE_INDEX|Nifty 50
+// Answers with the quotes Upstox returned; keys without a quote are left out
+candlesRouter.get('/quotes', async (req, res) => {
+  const keys = [
+    ...new Set(
+      String(req.query.keys || '')
+        .split(',')
+        .map((k) => k.trim())
+        .filter(Boolean)
+    ),
+  ];
+  if (keys.length === 0) {
+    res.status(400).json({ ok: false, error: 'Query parameter "keys" (comma-separated instrument keys) is required' });
+    return;
+  }
+
+  try {
+    const quotes = await getMarketQuotes(keys);
+    res.json({
+      ok: true,
+      quotes,
+    });
+  } catch (err: any) {
+    const message = err?.message || 'Failed to fetch market quotes';
+    const status = message.includes('UPSTOX_TOKEN secret not set') ? 503 : 500;
+    res.status(status).json({
+      ok: false,
+      error: message,
+    });
+  }
+});
 
 candlesRouter.get('/quote', async (req, res) => {
   const key = req.query.key as string;

@@ -131,6 +131,7 @@ interface AppState {
   watchlist: WatchlistItem[];
   addToWatchlist: (item: WatchlistItem) => void;
   removeFromWatchlist: (key: string) => void;
+  refreshWatchlistQuotes: () => Promise<void>;
 
   // Bottom Panel
   bottomPanelTab: BottomPanelTab;
@@ -168,6 +169,9 @@ const DEFAULT_WATCHLIST: WatchlistItem[] = [
   { key: 'NSE_EQ|INE030A01027', symbol: 'HINDUNILVR', name: 'HINDUSTAN UNILEVER LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
   { key: 'NSE_EQ|INE018A01030', symbol: 'LT', name: 'LARSEN & TOUBRO LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
 ];
+
+// The refresh running now, so the watchlist mount and the live-quote poll never overlap
+let watchlistQuotesInFlight: Promise<void> | null = null;
 
 export const useAppStore = create<AppState>((set, get) => ({
   exchange: 'NSE',
@@ -691,6 +695,34 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   removeFromWatchlist: (key) => {
     set((s) => ({ watchlist: s.watchlist.filter((w) => w.key !== key) }));
+  },
+  refreshWatchlistQuotes: () => {
+    if (watchlistQuotesInFlight) return watchlistQuotesInFlight;
+    const keys = get().watchlist.map((w) => w.key);
+    if (keys.length === 0) return Promise.resolve();
+
+    watchlistQuotesInFlight = (async () => {
+      try {
+        const res = await fetch(`/api/quotes?keys=${encodeURIComponent(keys.join(','))}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.ok || !data.quotes) return;
+        const quotes: Record<string, LiveQuote> = data.quotes;
+
+        // Only symbols with a real quote change; the rest keep their values (null shows "-")
+        set((state) => ({
+          watchlist: state.watchlist.map((w) => {
+            const q = quotes[w.key];
+            return q ? { ...w, lastPrice: q.lastPrice, change: q.change, changePct: q.changePct } : w;
+          }),
+        }));
+      } catch {
+        // quiet network failure: leave the watchlist as it is
+      } finally {
+        watchlistQuotesInFlight = null;
+      }
+    })();
+    return watchlistQuotesInFlight;
   },
 
   bottomPanelTab: 'strategy_tester',
