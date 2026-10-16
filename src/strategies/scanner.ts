@@ -1,34 +1,56 @@
 import { Candle, WatchlistItem } from '../types/index.ts';
 import { ScannerItem } from './types.ts';
 import { calculateSMA, calculateEMA, calculateRSI, calculateBollingerBands } from './indicators.ts';
+import { generateSignals, numParam } from './engine.ts';
+import { BUILT_IN_STRATEGIES } from './definitions.ts';
 
 export type ScannerFilterType = 'all' | 'sma44' | 'ema_cross' | 'rsi_oversold' | 'vol_breakout' | 'bollinger_squeeze';
 
 export const INDIAN_MARKET_UNIVERSE: WatchlistItem[] = [
-  { key: 'NSE_INDEX|Nifty 50', symbol: 'NIFTY 50', name: 'Nifty 50 Index', exchange: 'NSE', lastPrice: 24850.50, change: 125.40, changePct: 0.51 },
-  { key: 'NSE_EQ|INE002A01018', symbol: 'RELIANCE', name: 'RELIANCE INDUSTRIES LTD', exchange: 'NSE', lastPrice: 2980.25, change: 32.10, changePct: 1.09 },
-  { key: 'NSE_EQ|INE040A01034', symbol: 'HDFCBANK', name: 'HDFC BANK LTD', exchange: 'NSE', lastPrice: 1680.00, change: -12.40, changePct: -0.73 },
-  { key: 'NSE_EQ|INE090A01021', symbol: 'ICICIBANK', name: 'ICICI BANK LTD', exchange: 'NSE', lastPrice: 1245.50, change: 18.20, changePct: 1.48 },
-  { key: 'NSE_EQ|INE009A01021', symbol: 'INFY', name: 'INFOSYS LTD', exchange: 'NSE', lastPrice: 1890.75, change: 5.60, changePct: 0.30 },
-  { key: 'NSE_EQ|INE467B01029', symbol: 'TCS', name: 'TATA CONSULTANCY SERVICES LTD', exchange: 'NSE', lastPrice: 4210.00, change: -24.80, changePct: -0.59 },
-  { key: 'NSE_EQ|INE062A01020', symbol: 'SBIN', name: 'STATE BANK OF INDIA', exchange: 'NSE', lastPrice: 810.20, change: 8.40, changePct: 1.05 },
-  { key: 'NSE_EQ|INE154A01025', symbol: 'ITC', name: 'ITC LTD', exchange: 'NSE', lastPrice: 485.50, change: 2.10, changePct: 0.43 },
-  { key: 'NSE_EQ|INE030A01027', symbol: 'HINDUNILVR', name: 'HINDUSTAN UNILEVER LTD', exchange: 'NSE', lastPrice: 2680.00, change: -15.30, changePct: -0.57 },
-  { key: 'NSE_EQ|INE018A01030', symbol: 'LT', name: 'LARSEN & TOUBRO LTD', exchange: 'NSE', lastPrice: 3590.00, change: 42.00, changePct: 1.18 },
-  { key: 'NSE_EQ|INE155A01022', symbol: 'TATAMOTORS', name: 'TATA MOTORS LTD', exchange: 'NSE', lastPrice: 940.50, change: 15.20, changePct: 1.64 },
-  { key: 'NSE_EQ|INE296A01024', symbol: 'BAJFINANCE', name: 'BAJAJ FINANCE LTD', exchange: 'NSE', lastPrice: 7120.00, change: -35.00, changePct: -0.49 },
-  { key: 'NSE_EQ|INE238A01034', symbol: 'AXISBANK', name: 'AXIS BANK LTD', exchange: 'NSE', lastPrice: 1195.00, change: 14.50, changePct: 1.23 },
-  { key: 'NSE_EQ|INE397D01024', symbol: 'BHARTIARTL', name: 'BHARTI AIRTEL LTD', exchange: 'NSE', lastPrice: 1650.00, change: 22.00, changePct: 1.35 },
-  { key: 'NSE_EQ|INE237A01028', symbol: 'KOTAKBANK', name: 'KOTAK MAHINDRA BANK LTD', exchange: 'NSE', lastPrice: 1780.00, change: -8.00, changePct: -0.45 },
-  { key: 'NSE_EQ|INE585B01010', symbol: 'MARUTI', name: 'MARUTI SUZUKI INDIA LTD', exchange: 'NSE', lastPrice: 12250.00, change: 180.00, changePct: 1.49 },
+  { key: 'NSE_INDEX|Nifty 50', symbol: 'NIFTY 50', name: 'Nifty 50 Index', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE002A01018', symbol: 'RELIANCE', name: 'RELIANCE INDUSTRIES LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE040A01034', symbol: 'HDFCBANK', name: 'HDFC BANK LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE090A01021', symbol: 'ICICIBANK', name: 'ICICI BANK LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE009A01021', symbol: 'INFY', name: 'INFOSYS LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE467B01029', symbol: 'TCS', name: 'TATA CONSULTANCY SERVICES LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE062A01020', symbol: 'SBIN', name: 'STATE BANK OF INDIA', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE154A01025', symbol: 'ITC', name: 'ITC LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE030A01027', symbol: 'HINDUNILVR', name: 'HINDUSTAN UNILEVER LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE018A01030', symbol: 'LT', name: 'LARSEN & TOUBRO LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE155A01022', symbol: 'TATAMOTORS', name: 'TATA MOTORS LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE296A01024', symbol: 'BAJFINANCE', name: 'BAJAJ FINANCE LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE238A01034', symbol: 'AXISBANK', name: 'AXIS BANK LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE397D01024', symbol: 'BHARTIARTL', name: 'BHARTI AIRTEL LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE237A01028', symbol: 'KOTAKBANK', name: 'KOTAK MAHINDRA BANK LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE585B01010', symbol: 'MARUTI', name: 'MARUTI SUZUKI INDIA LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
 ];
 
 /**
+ * Row for a symbol whose candles could not be loaded: no price or signal is invented.
+ */
+export function unavailableScanItem(item: WatchlistItem): ScannerItem {
+  return {
+    key: item.key,
+    symbol: item.symbol,
+    name: item.name,
+    exchange: item.exchange,
+    lastPrice: null,
+    changePct: null,
+    signal: 'UNAVAILABLE',
+    setupName: 'Data unavailable',
+    setupScore: 0,
+    details: 'Candle data could not be loaded, so no setup was evaluated',
+  };
+}
+
+/**
  * Scans a list of candles for an instrument to detect active setups.
+ * The 44 SMA setup uses the backtester's own rule (generateSignals) with `sma44Params`.
  */
 export function analyzeSymbolForSetups(
   item: WatchlistItem,
-  candles: Candle[]
+  candles: Candle[],
+  sma44Params: Record<string, any> = BUILT_IN_STRATEGIES.sma44_pullback.params
 ): ScannerItem | null {
   if (!candles || candles.length < 45) {
     return {
@@ -36,7 +58,7 @@ export function analyzeSymbolForSetups(
       symbol: item.symbol,
       name: item.name,
       exchange: item.exchange,
-      lastPrice: item.lastPrice,
+      lastPrice: candles?.length ? candles[candles.length - 1].close : item.lastPrice,
       changePct: item.changePct,
       signal: 'NEUTRAL',
       setupName: 'Insufficient Data',
@@ -48,34 +70,31 @@ export function analyzeSymbolForSetups(
   const closes = candles.map((c) => c.close);
   const latest = candles[candles.length - 1];
   const prev = candles[candles.length - 2];
+  // Session change from the candles themselves, not from a static list
+  const changePct = prev.close > 0 ? ((latest.close - prev.close) / prev.close) * 100 : null;
 
-  // 1. Check 44 SMA Pullback
-  const sma44List = calculateSMA(closes, 44);
-  const currentSma44 = sma44List[sma44List.length - 1];
-  const prevSma44 = sma44List[sma44List.length - 2];
+  // 1. Check 44 SMA Pullback: a setup on the latest candle, by the same rule the backtester trades
+  const smaList = calculateSMA(closes, numParam(sma44Params.smaPeriod, 44));
+  const currentSma = smaList[smaList.length - 1];
+  const smaDistancePct = currentSma ? ((latest.close - currentSma) / currentSma) * 100 : 0;
 
-  let smaDistancePct = 0;
-  if (currentSma44 && prevSma44) {
-    smaDistancePct = ((latest.close - currentSma44) / currentSma44) * 100;
-    const isSmaRising = currentSma44 >= prevSma44 * 0.999;
-    const dippedNear = latest.low <= currentSma44 * 1.015 && latest.close >= currentSma44 * 0.985;
-    const isGreen = latest.close >= latest.open;
-
-    if (isSmaRising && dippedNear && isGreen) {
-      return {
-        key: item.key,
-        symbol: item.symbol,
-        name: item.name,
-        exchange: item.exchange,
-        lastPrice: latest.close,
-        changePct: item.changePct,
-        signal: 'BULLISH',
-        setupName: '44 SMA Pullback Bounce',
-        setupScore: 94,
-        details: `Touching rising 44 SMA (₹${currentSma44.toFixed(2)}) with green confirmation candle`,
-        smaDistancePct,
-      };
-    }
+  const sma44Setup = generateSignals(candles, 'sma44_pullback', sma44Params).find(
+    (s) => s.candleIndex === candles.length - 1
+  );
+  if (sma44Setup) {
+    return {
+      key: item.key,
+      symbol: item.symbol,
+      name: item.name,
+      exchange: item.exchange,
+      lastPrice: latest.close,
+      changePct,
+      signal: 'BULLISH',
+      setupName: '44 SMA Pullback Bounce',
+      setupScore: 94,
+      details: `Setup on rising 44 SMA (₹${(currentSma ?? 0).toFixed(2)}). Buy-stop ₹${sma44Setup.price.toFixed(2)}, stop ₹${sma44Setup.stopLoss.toFixed(2)}`,
+      smaDistancePct,
+    };
   }
 
   // 2. Check EMA 9 / 21 Trend Crossover
@@ -94,7 +113,7 @@ export function analyzeSymbolForSetups(
         name: item.name,
         exchange: item.exchange,
         lastPrice: latest.close,
-        changePct: item.changePct,
+        changePct,
         signal: 'BULLISH',
         setupName: 'EMA 9/21 Golden Cross',
         setupScore: 91,
@@ -116,7 +135,7 @@ export function analyzeSymbolForSetups(
         name: item.name,
         exchange: item.exchange,
         lastPrice: latest.close,
-        changePct: item.changePct,
+        changePct,
         signal: 'BULLISH',
         setupName: 'RSI Oversold Hook (>30)',
         setupScore: 88,
@@ -130,7 +149,7 @@ export function analyzeSymbolForSetups(
         name: item.name,
         exchange: item.exchange,
         lastPrice: latest.close,
-        changePct: item.changePct,
+        changePct,
         signal: 'BEARISH',
         setupName: 'RSI Overbought Alert (>75)',
         setupScore: 80,
@@ -152,7 +171,7 @@ export function analyzeSymbolForSetups(
       name: item.name,
       exchange: item.exchange,
       lastPrice: latest.close,
-      changePct: item.changePct,
+      changePct,
       signal: 'BULLISH',
       setupName: 'High Volume Expansion',
       setupScore: 89,
@@ -171,7 +190,7 @@ export function analyzeSymbolForSetups(
       name: item.name,
       exchange: item.exchange,
       lastPrice: latest.close,
-      changePct: item.changePct,
+      changePct,
       signal: 'NEUTRAL',
       setupName: 'Bollinger Band Squeeze',
       setupScore: 78,
@@ -186,8 +205,8 @@ export function analyzeSymbolForSetups(
     name: item.name,
     exchange: item.exchange,
     lastPrice: latest.close,
-    changePct: item.changePct,
-    signal: item.changePct >= 0 ? 'BULLISH' : 'BEARISH',
+    changePct,
+    signal: changePct === null ? 'NEUTRAL' : changePct >= 0 ? 'BULLISH' : 'BEARISH',
     setupName: 'Consolidation / Range',
     setupScore: 50,
     details: `Trading within normal range (RSI ${currentRsi?.toFixed(0) ?? '-'})`,

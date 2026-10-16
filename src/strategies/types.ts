@@ -26,6 +26,16 @@ export interface StrategyDefinition {
 
 export type SignalType = 'BUY' | 'SELL';
 
+// SMA44 exits: full exit at the target | half at the target, then breakeven stop + trail | trail only
+export type ExitMode = 'fixed' | 'half' | 'trail';
+
+/** A resting buy-stop order placed after the signal candle closes. */
+export interface BuyStopOrder {
+  trigger: number;
+  validBars: number; // number of bars after the signal candle on which the order may fill
+  targetR: number; // target distance in multiples of the risk taken at the fill
+}
+
 export interface StrategySignal {
   id: string;
   strategyId: StrategyId;
@@ -39,7 +49,9 @@ export interface StrategySignal {
   target2: number;
   riskReward: string;
   reason: string;
-  status: 'ACTIVE' | 'HIT_TARGET' | 'HIT_SL' | 'CLOSED';
+  status: 'ACTIVE' | 'HIT_TARGET' | 'HIT_SL' | 'CLOSED' | 'EXPIRED';
+  // Present when entry is a buy-stop above the signal candle; otherwise entry is at the signal close.
+  buyStop?: BuyStopOrder;
 }
 
 export interface BacktestTrade {
@@ -53,9 +65,13 @@ export interface BacktestTrade {
   shares: number;
   pnl: number;
   pnlPct: number;
-  exitReason: 'TARGET' | 'STOP_LOSS' | 'EXIT_SIGNAL' | 'END_OF_DATA';
+  exitReason: 'TARGET' | 'STOP_LOSS' | 'BREAKEVEN' | 'EXIT_SIGNAL' | 'END_OF_DATA';
   holdingPeriodBars: number;
   equityAfter: number;
+  costs: number; // transaction costs paid on entry + exit (already deducted from pnl)
+  initialStop: number;
+  rMultiple: number | null; // pnl / (shares x (entry - initial stop)); null when that risk is not positive
+  partialExit?: { time: number; price: number; shares: number }; // half exit at the target (half mode)
 }
 
 export interface EquityPoint {
@@ -90,6 +106,9 @@ export interface BacktestResult {
   equityCurve: EquityPoint[];
   signals: StrategySignal[];
   executionTimeMs: number;
+  totalCosts: number;
+  avgR: number | null; // null when there are no trades
+  exitMode: ExitMode;
   sharpeRatio?: number;
   expectancy?: number;
   winLossRatio?: number;
@@ -101,9 +120,9 @@ export interface ScannerItem {
   symbol: string;
   name: string;
   exchange: string;
-  lastPrice: number;
-  changePct: number;
-  signal: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  lastPrice: number | null; // null when no market data is available
+  changePct: number | null;
+  signal: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNAVAILABLE';
   setupName: string;
   setupScore: number; // 0 - 100
   details: string;

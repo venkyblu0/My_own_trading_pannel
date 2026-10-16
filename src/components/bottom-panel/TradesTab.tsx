@@ -26,6 +26,7 @@ type TradeSortField =
   | 'shares'
   | 'pnl'
   | 'pnlPct'
+  | 'rMultiple'
   | 'holdingPeriodBars'
   | 'exitReason'
   | 'equityAfter';
@@ -53,7 +54,7 @@ export const TradesTab: React.FC = () => {
     } else {
       setSortField(field);
       // Sensible default directions for columns
-      if (field === 'pnl' || field === 'pnlPct' || field === 'exitTime' || field === 'entryTime' || field === 'tradeNumber' || field === 'equityAfter') {
+      if (field === 'pnl' || field === 'pnlPct' || field === 'rMultiple' || field === 'exitTime' || field === 'entryTime' || field === 'tradeNumber' || field === 'equityAfter') {
         setSortOrder('desc');
       } else {
         setSortOrder('asc');
@@ -92,14 +93,17 @@ export const TradesTab: React.FC = () => {
 
   const handleExportCSV = () => {
     if (trades.length === 0) return;
-    const headers = 'Trade#,Type,EntryTime,EntryPrice,ExitTime,ExitPrice,Shares,PnL_INR,PnL_Pct,ExitReason,EquityAfter\n';
+    const headers =
+      'Trade#,Type,EntryTime,EntryPrice,ExitTime,ExitPrice,Shares,HalfExitPrice,HalfExitShares,PnL_INR,PnL_Pct,R,Costs_INR,ExitReason,EquityAfter\n';
     const rows = sortedAndFilteredTrades
       .map(
         (t) =>
           `${t.tradeNumber},${t.type},"${formatISTTime(t.entryTime, true)}",${t.entryPrice},"${formatISTTime(
             t.exitTime,
             true
-          )}",${t.exitPrice},${t.shares},${t.pnl.toFixed(2)},${t.pnlPct.toFixed(2)},${t.exitReason},${t.equityAfter.toFixed(2)}`
+          )}",${t.exitPrice},${t.shares},${t.partialExit?.price ?? ''},${t.partialExit?.shares ?? ''},${t.pnl.toFixed(2)},${t.pnlPct.toFixed(
+            2
+          )},${t.rMultiple?.toFixed(3) ?? ''},${t.costs.toFixed(2)},${t.exitReason},${t.equityAfter.toFixed(2)}`
       )
       .join('\n');
 
@@ -345,6 +349,15 @@ export const TradesTab: React.FC = () => {
                   </div>
                 </th>
                 <th
+                  onClick={() => handleSort('rMultiple')}
+                  className="py-2 px-3 cursor-pointer group hover:bg-[#1F2630]/60 transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    <span>R</span>
+                    {renderSortIcon('rMultiple')}
+                  </div>
+                </th>
+                <th
                   onClick={() => handleSort('holdingPeriodBars')}
                   className="py-2 px-3 cursor-pointer group hover:bg-[#1F2630]/60 transition-colors"
                 >
@@ -408,6 +421,11 @@ export const TradesTab: React.FC = () => {
                     </td>
                     <td className="py-2 px-3 font-semibold text-[#E6EDF3]">
                       {formatINR(t.exitPrice)}
+                      {t.partialExit && (
+                        <span className="block text-[9px] font-normal text-[#8B949E]">
+                          half: {t.partialExit.shares} @ {formatINR(t.partialExit.price)}
+                        </span>
+                      )}
                     </td>
                     <td className="py-2 px-3 text-[#8B949E]">
                       {t.shares.toLocaleString()}
@@ -422,6 +440,9 @@ export const TradesTab: React.FC = () => {
                     </td>
                     <td className={`py-2 px-3 font-semibold ${isWin ? 'text-[#26A69A]' : 'text-[#EF5350]'}`}>
                       {formatPct(t.pnlPct)}
+                    </td>
+                    <td className={`py-2 px-3 font-semibold ${isWin ? 'text-[#26A69A]' : 'text-[#EF5350]'}`}>
+                      {t.rMultiple === null ? '-' : `${t.rMultiple >= 0 ? '+' : ''}${t.rMultiple.toFixed(2)}R`}
                     </td>
                     <td className="py-2 px-3 text-[#8B949E]">
                       {t.holdingPeriodBars} bars

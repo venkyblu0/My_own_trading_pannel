@@ -346,6 +346,11 @@ export const SignalsTab: React.FC = () => {
                           Closed
                         </span>
                       )}
+                      {sig.status === 'EXPIRED' && (
+                        <span className="inline-flex items-center gap-1 text-[#8B949E] bg-[#181D25] px-1.5 py-0.5 rounded text-[10px]">
+                          Expired (not filled)
+                        </span>
+                      )}
                     </td>
                     <td className="py-2 px-3 text-[#8B949E] text-[10px] max-w-xs truncate" title={sig.reason}>
                       {sig.reason}

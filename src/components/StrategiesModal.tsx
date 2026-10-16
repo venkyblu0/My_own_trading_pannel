@@ -126,15 +126,29 @@ export const StrategiesModal: React.FC = () => {
                       <label className="text-[11px] text-[#8B949E] block mb-1">
                         {param.label}
                       </label>
-                      <input
-                        type="number"
-                        min={param.min}
-                        max={param.max}
-                        step={param.step || 1}
-                        value={val}
-                        onChange={(e) => handleParamChange(param.key, Number(e.target.value))}
-                        className="w-full bg-[#12161C] border border-[#1F2630] focus:border-[#F0B90B] rounded px-2.5 py-1 text-xs text-[#E6EDF3] focus:outline-none"
-                      />
+                      {param.type === 'select' ? (
+                        <select
+                          value={val}
+                          onChange={(e) => handleParamChange(param.key, e.target.value)}
+                          className="w-full bg-[#12161C] border border-[#1F2630] focus:border-[#F0B90B] rounded px-2.5 py-1 text-xs text-[#E6EDF3] focus:outline-none cursor-pointer"
+                        >
+                          {param.options?.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="number"
+                          min={param.min}
+                          max={param.max}
+                          step={param.step || 1}
+                          value={val}
+                          onChange={(e) => handleParamChange(param.key, Number(e.target.value))}
+                          className="w-full bg-[#12161C] border border-[#1F2630] focus:border-[#F0B90B] rounded px-2.5 py-1 text-xs text-[#E6EDF3] focus:outline-none"
+                        />
+                      )}
                     </div>
                   );
                 })}

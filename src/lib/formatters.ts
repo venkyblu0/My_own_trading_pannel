@@ -14,16 +14,25 @@ export function formatINR(val: number | null | undefined, showSymbol: boolean = 
  * Formats percentage with sign (e.g. +1.45% or -0.80%).
  */
 export function formatPct(val: number | null | undefined): string {
-  if (val === null || val === undefined || isNaN(val)) return '0.00%';
+  if (val === null || val === undefined || isNaN(val)) return '-';
   const prefix = val > 0 ? '+' : '';
   return `${prefix}${val.toFixed(2)}%`;
+}
+
+/**
+ * Formats a ratio (e.g. Sharpe) to 2 decimals, or '-' when it is missing.
+ */
+export function formatRatio(val: number | null | undefined): string {
+  if (val === null || val === undefined || isNaN(val)) return '-';
+  return val.toFixed(2);
 }
 
 /**
  * Formats volume to readable Indian notation (Cr, L, K) or standard commas.
  */
 export function formatVolume(vol: number | null | undefined): string {
-  if (!vol || isNaN(vol)) return '0';
+  if (vol === null || vol === undefined || isNaN(vol)) return '-';
+  if (vol === 0) return '0';
   if (vol >= 10_000_000) {
     return `${(vol / 10_000_000).toFixed(2)} Cr`;
   }

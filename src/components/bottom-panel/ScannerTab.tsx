@@ -284,18 +284,22 @@ export const ScannerTab: React.FC = () => {
                     <td className="py-2 px-3 font-semibold text-[#E6EDF3]">
                       {formatINR(item.lastPrice)}
                     </td>
-                    <td
-                      className={`py-2 px-3 font-bold flex items-center gap-0.5 ${
-                        item.changePct >= 0 ? 'text-[#26A69A]' : 'text-[#EF5350]'
-                      }`}
-                    >
-                      {item.changePct >= 0 ? (
-                        <TrendingUp className="w-3 h-3" />
-                      ) : (
-                        <TrendingDown className="w-3 h-3" />
-                      )}
-                      <span>{formatPct(item.changePct)}</span>
-                    </td>
+                    {item.changePct === null ? (
+                      <td className="py-2 px-3 text-[#8B949E]">-</td>
+                    ) : (
+                      <td
+                        className={`py-2 px-3 font-bold flex items-center gap-0.5 ${
+                          item.changePct >= 0 ? 'text-[#26A69A]' : 'text-[#EF5350]'
+                        }`}
+                      >
+                        {item.changePct >= 0 ? (
+                          <TrendingUp className="w-3 h-3" />
+                        ) : (
+                          <TrendingDown className="w-3 h-3" />
+                        )}
+                        <span>{formatPct(item.changePct)}</span>
+                      </td>
+                    )}
                     <td className="py-2 px-3">
                       <span
                         className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold ${
@@ -306,7 +310,7 @@ export const ScannerTab: React.FC = () => {
                             : 'bg-[#181D25] text-[#8B949E]'
                         }`}
                       >
-                        {item.signal}
+                        {item.signal === 'UNAVAILABLE' ? '-' : item.signal}
                       </span>
                     </td>
                     <td className="py-2 px-3 font-medium text-[#E6EDF3]">

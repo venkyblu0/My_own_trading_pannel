@@ -3,7 +3,7 @@ import { Instrument, Timeframe, ChartType, BottomPanelTab, Candle, WatchlistItem
 import { StrategyId, BacktestResult, ScannerItem } from '../strategies/types.ts';
 import { BUILT_IN_STRATEGIES } from '../strategies/definitions.ts';
 import { runBacktest } from '../strategies/engine.ts';
-import { analyzeSymbolForSetups, ScannerFilterType, INDIAN_MARKET_UNIVERSE } from '../strategies/scanner.ts';
+import { analyzeSymbolForSetups, unavailableScanItem, ScannerFilterType, INDIAN_MARKET_UNIVERSE } from '../strategies/scanner.ts';
 
 interface AppState {
   // Exchange & Symbol
@@ -157,16 +157,16 @@ const DEFAULT_INSTRUMENT: Instrument = {
 };
 
 const DEFAULT_WATCHLIST: WatchlistItem[] = [
-  { key: 'NSE_INDEX|Nifty 50', symbol: 'NIFTY 50', name: 'Nifty 50 Index', exchange: 'NSE', lastPrice: 24850.50, change: 125.40, changePct: 0.51 },
-  { key: 'NSE_EQ|INE002A01018', symbol: 'RELIANCE', name: 'RELIANCE INDUSTRIES LTD', exchange: 'NSE', lastPrice: 2980.25, change: 32.10, changePct: 1.09 },
-  { key: 'NSE_EQ|INE040A01034', symbol: 'HDFCBANK', name: 'HDFC BANK LTD', exchange: 'NSE', lastPrice: 1680.00, change: -12.40, changePct: -0.73 },
-  { key: 'NSE_EQ|INE090A01021', symbol: 'ICICIBANK', name: 'ICICI BANK LTD', exchange: 'NSE', lastPrice: 1245.50, change: 18.20, changePct: 1.48 },
-  { key: 'NSE_EQ|INE009A01021', symbol: 'INFY', name: 'INFOSYS LTD', exchange: 'NSE', lastPrice: 1890.75, change: 5.60, changePct: 0.30 },
-  { key: 'NSE_EQ|INE467B01029', symbol: 'TCS', name: 'TATA CONSULTANCY SERVICES LTD', exchange: 'NSE', lastPrice: 4210.00, change: -24.80, changePct: -0.59 },
-  { key: 'NSE_EQ|INE062A01020', symbol: 'SBIN', name: 'STATE BANK OF INDIA', exchange: 'NSE', lastPrice: 810.20, change: 8.40, changePct: 1.05 },
-  { key: 'NSE_EQ|INE154A01025', symbol: 'ITC', name: 'ITC LTD', exchange: 'NSE', lastPrice: 485.50, change: 2.10, changePct: 0.43 },
-  { key: 'NSE_EQ|INE030A01027', symbol: 'HINDUNILVR', name: 'HINDUSTAN UNILEVER LTD', exchange: 'NSE', lastPrice: 2680.00, change: -15.30, changePct: -0.57 },
-  { key: 'NSE_EQ|INE018A01030', symbol: 'LT', name: 'LARSEN & TOUBRO LTD', exchange: 'NSE', lastPrice: 3590.00, change: 42.00, changePct: 1.18 },
+  { key: 'NSE_INDEX|Nifty 50', symbol: 'NIFTY 50', name: 'Nifty 50 Index', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE002A01018', symbol: 'RELIANCE', name: 'RELIANCE INDUSTRIES LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE040A01034', symbol: 'HDFCBANK', name: 'HDFC BANK LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE090A01021', symbol: 'ICICIBANK', name: 'ICICI BANK LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE009A01021', symbol: 'INFY', name: 'INFOSYS LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE467B01029', symbol: 'TCS', name: 'TATA CONSULTANCY SERVICES LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE062A01020', symbol: 'SBIN', name: 'STATE BANK OF INDIA', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE154A01025', symbol: 'ITC', name: 'ITC LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE030A01027', symbol: 'HINDUNILVR', name: 'HINDUSTAN UNILEVER LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
+  { key: 'NSE_EQ|INE018A01030', symbol: 'LT', name: 'LARSEN & TOUBRO LTD', exchange: 'NSE', lastPrice: null, change: null, changePct: null },
 ];
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -327,7 +327,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({
           signalNotification: {
             symbol,
-            text: `${latestSig.strategyName}: ${latestSig.type} at ₹${latestSig.price.toFixed(2)} (${latestSig.riskReward})`,
+            text: `${latestSig.strategyName}: ${latestSig.buyStop ? 'BUY-STOP' : latestSig.type} at ₹${latestSig.price.toFixed(2)} (${latestSig.riskReward})`,
             type: latestSig.type,
             time: latestSig.time,
           },
@@ -368,11 +368,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (!res.ok) continue;
         const data = await res.json();
         if (data.ok && Array.isArray(data.candles) && data.candles.length >= 20) {
-          const bt = runBacktest(data.candles, sId, params, item.symbol, timeframe);
+          const candles: Candle[] = [...data.candles].sort((a: Candle, b: Candle) => a.time - b.time);
+          const bt = runBacktest(candles, sId, params, item.symbol, timeframe);
           results.push({
             symbol: item.symbol,
             name: item.name,
-            lastPrice: item.lastPrice,
+            lastPrice: candles[candles.length - 1].close,
             winRatePct: bt.winRatePct,
             netProfit: bt.netProfit,
             netProfitPct: bt.netProfitPct,
@@ -421,6 +422,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isScanning: true });
     const universe = INDIAN_MARKET_UNIVERSE;
     const results: ScannerItem[] = [];
+    // Scan for SMA44 setups with the parameters the backtester is using when SMA44 is active
+    const sma44Params =
+      get().activeStrategyId === 'sma44_pullback' ? get().strategyParams : BUILT_IN_STRATEGIES.sma44_pullback.params;
 
     // Analyze currently loaded chart symbol first with full candles
     const currentInst = get().selectedInstrument;
@@ -431,11 +435,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         symbol: currentInst.symbol,
         name: currentInst.name,
         exchange: currentInst.exchange,
-        lastPrice: get().lastClose || 0,
-        change: get().priceChange || 0,
-        changePct: get().priceChangePct || 0,
+        lastPrice: get().lastClose,
+        change: get().priceChange,
+        changePct: get().priceChangePct,
       };
-      const res = analyzeSymbolForSetups(currentWatchItem, currentCandles);
+      const res = analyzeSymbolForSetups(currentWatchItem, currentCandles, sma44Params);
       if (res) results.push(res);
     }
 
@@ -448,28 +452,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (res.ok) {
           const data = await res.json();
           if (data.ok && Array.isArray(data.candles) && data.candles.length > 0) {
-            const scanItem = analyzeSymbolForSetups(item, data.candles);
+            const scanItem = analyzeSymbolForSetups(item, data.candles, sma44Params);
             if (scanItem) results.push(scanItem);
             continue;
           }
         }
       } catch {
-        // Fallback scan analysis on quote
+        // fall through to the "Data unavailable" row
       }
 
-      // Fallback synthetic scan item if candle fetch fails
-      results.push({
-        key: item.key,
-        symbol: item.symbol,
-        name: item.name,
-        exchange: item.exchange,
-        lastPrice: item.lastPrice,
-        changePct: item.changePct,
-        signal: item.changePct >= 0 ? 'BULLISH' : 'BEARISH',
-        setupName: item.changePct > 1 ? 'Momentum Trend' : 'Consolidation',
-        setupScore: Math.min(90, Math.floor(50 + Math.abs(item.changePct) * 15)),
-        details: `Trading ${item.changePct >= 0 ? '+' : ''}${item.changePct.toFixed(2)}% in session`,
-      });
+      // Candle fetch failed: say so instead of inventing a signal
+      results.push(unavailableScanItem(item));
     }
 
     set({ scannerResults: results, isScanning: false });
@@ -496,12 +489,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   isLoadingCandles: false,
   candleError: null,
 
-  lastClose: 2980.25,
-  priceChange: 32.10,
-  priceChangePct: 1.09,
-  sessionHigh: 3010.00,
-  sessionLow: 2945.50,
-  sessionVolume: 8524000,
+  // No price is shown until real candles or a live quote arrive
+  lastClose: null,
+  priceChange: null,
+  priceChangePct: null,
+  sessionHigh: null,
+  sessionLow: null,
+  sessionVolume: null,
   liveQuote: null,
 
   fetchLiveQuote: async () => {

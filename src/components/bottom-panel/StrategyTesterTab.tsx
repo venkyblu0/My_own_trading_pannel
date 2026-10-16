@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAppStore } from '../../store/useAppStore.ts';
 import { BUILT_IN_STRATEGIES } from '../../strategies/definitions.ts';
 import { StrategyId } from '../../strategies/types.ts';
-import { formatINR, formatPct, formatISTTime } from '../../lib/formatters.ts';
+import { formatINR, formatPct, formatISTTime, formatRatio } from '../../lib/formatters.ts';
 import {
   Play,
   TrendingUp,
@@ -265,18 +265,32 @@ export const StrategyTesterTab: React.FC = () => {
           {currentStrategy.paramDefs.slice(0, 4).map((p) => (
             <div key={p.key} className="flex items-center gap-2">
               <span className="text-[11px] text-[#8B949E]">{p.label}:</span>
-              <input
-                type="number"
-                value={strategyParams[p.key] ?? p.default}
-                min={p.min}
-                max={p.max}
-                step={p.step || 1}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  updateStrategyParams({ ...strategyParams, [p.key]: val });
-                }}
-                className="w-18 bg-[#181D25] border border-[#1F2630] rounded px-2 py-0.5 text-xs text-[#E6EDF3] font-mono focus:border-[#F0B90B] focus:outline-none"
-              />
+              {p.type === 'select' ? (
+                <select
+                  value={strategyParams[p.key] ?? p.default}
+                  onChange={(e) => updateStrategyParams({ ...strategyParams, [p.key]: e.target.value })}
+                  className="bg-[#181D25] border border-[#1F2630] rounded px-2 py-0.5 text-xs text-[#E6EDF3] font-mono focus:border-[#F0B90B] focus:outline-none cursor-pointer"
+                >
+                  {p.options?.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="number"
+                  value={strategyParams[p.key] ?? p.default}
+                  min={p.min}
+                  max={p.max}
+                  step={p.step || 1}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    updateStrategyParams({ ...strategyParams, [p.key]: val });
+                  }}
+                  className="w-18 bg-[#181D25] border border-[#1F2630] rounded px-2 py-0.5 text-xs text-[#E6EDF3] font-mono focus:border-[#F0B90B] focus:outline-none"
+                />
+              )}
             </div>
           ))}
 
@@ -542,7 +556,7 @@ export const StrategyTesterTab: React.FC = () => {
           {backtestResult ? (
             <div className="flex-1 flex flex-col gap-3 pt-3 min-h-0">
               {/* Key Metric Summary Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-2">
                 {/* Net Profit */}
                 <div className="bg-[#12161C] border border-[#1F2630] rounded p-2 flex flex-col">
                   <span className="text-[9px] text-[#8B949E] uppercase tracking-wider">
@@ -562,6 +576,7 @@ export const StrategyTesterTab: React.FC = () => {
                   </div>
                   <span className={`text-[10px] mt-0.5 ${isNetProfit ? 'text-[#26A69A]' : 'text-[#EF5350]'}`}>
                     {formatPct(backtestResult.netProfitPct)}
+                    <span className="text-[#8B949E]"> · after {formatINR(backtestResult.totalCosts)} costs</span>
                   </span>
                 </div>
 
@@ -630,13 +645,28 @@ export const StrategyTesterTab: React.FC = () => {
                   </span>
                 </div>
 
+                {/* Average R-multiple */}
+                <div className="bg-[#12161C] border border-[#1F2630] rounded p-2 flex flex-col">
+                  <span className="text-[9px] text-[#8B949E] uppercase tracking-wider">
+                    Avg R
+                  </span>
+                  <div className="text-xs sm:text-sm font-bold text-[#F0B90B] mt-0.5">
+                    {backtestResult.avgR === null
+                      ? '-'
+                      : `${backtestResult.avgR >= 0 ? '+' : ''}${backtestResult.avgR.toFixed(2)}R`}
+                  </div>
+                  <span className="text-[10px] text-[#8B949E] mt-0.5">
+                    Exit: {backtestResult.exitMode}
+                  </span>
+                </div>
+
                 {/* Sharpe Ratio */}
                 <div className="bg-[#12161C] border border-[#1F2630] rounded p-2 flex flex-col">
                   <span className="text-[9px] text-[#8B949E] uppercase tracking-wider">
                     Sharpe Ratio
                   </span>
                   <div className="text-xs sm:text-sm font-bold text-[#4FA3FF] mt-0.5">
-                    {backtestResult.sharpeRatio?.toFixed(2) ?? '1.45'}
+                    {formatRatio(backtestResult.sharpeRatio)}
                   </div>
                   <span className="text-[10px] text-[#8B949E] mt-0.5">
                     Annualized risk adj
