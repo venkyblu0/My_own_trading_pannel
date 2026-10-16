@@ -19,7 +19,7 @@ if (!fs.existsSync(CANDLES_CACHE_DIR)) {
 const requestLogs: CandleLogEntry[] = [];
 
 export function getRequestLogs(): CandleLogEntry[] {
-  return [...requestLogs].slice(-100); // return last 100 entries
+  return requestLogs.slice(0, 100); // return 100 most recent requests (newest first)
 }
 
 export function addRequestLog(entry: CandleLogEntry): void {
@@ -28,6 +28,342 @@ export function addRequestLog(entry: CandleLogEntry): void {
     requestLogs.pop();
   }
 }
+
+// Upstox Session Management
+const TOKEN_CACHE_FILE = path.resolve(CACHE_DIR, 'token_session.json');
+
+export interface UpstoxSession {
+  accessToken: string;
+  extendedToken?: string;
+  userId?: string;
+  userName?: string;
+  email?: string;
+  expiresAt?: string;
+  source: 'env' | 'totp' | 'code' | 'manual';
+  updatedAt: number;
+}
+
+let memorySession: UpstoxSession | null = null;
+
+function initSession(): void {
+  if (process.env.UPSTOX_TOKEN && process.env.UPSTOX_TOKEN.trim().length > 0) {
+    memorySession = {
+      accessToken: process.env.UPSTOX_TOKEN.trim(),
+      source: 'env',
+      updatedAt: Date.now(),
+    };
+    return;
+  }
+
+  if (fs.existsSync(TOKEN_CACHE_FILE)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(TOKEN_CACHE_FILE, 'utf-8'));
+      if (data && data.accessToken) {
+        memorySession = data;
+        process.env.UPSTOX_TOKEN = data.accessToken;
+      }
+    } catch {
+      // ignore
+    }
+  }
+}
+initSession();
+
+export function getActiveToken(): string | null {
+  if (memorySession?.accessToken) return memorySession.accessToken;
+  if (process.env.UPSTOX_TOKEN && process.env.UPSTOX_TOKEN.trim().length > 0) {
+    return process.env.UPSTOX_TOKEN.trim();
+  }
+  return null;
+}
+
+export function getSessionStatus() {
+  const token = getActiveToken();
+  return {
+    authenticated: Boolean(token),
+    source: memorySession?.source || (process.env.UPSTOX_TOKEN ? 'env' : 'none'),
+    userName: memorySession?.userName,
+    userId: memorySession?.userId,
+    email: memorySession?.email,
+    expiresAt: memorySession?.expiresAt,
+  };
+}
+
+export function setServerSession(session: UpstoxSession): void {
+  memorySession = session;
+  process.env.UPSTOX_TOKEN = session.accessToken;
+  try {
+    fs.writeFileSync(TOKEN_CACHE_FILE, JSON.stringify(session, null, 2));
+  } catch (err) {
+    console.warn('Failed to cache token to disk:', err);
+  }
+}
+
+export function clearServerSession(): void {
+  memorySession = null;
+  delete process.env.UPSTOX_TOKEN;
+  if (fs.existsSync(TOKEN_CACHE_FILE)) {
+    try {
+      fs.unlinkSync(TOKEN_CACHE_FILE);
+    } catch {}
+  }
+}
+
+/**
+ * Acquire Upstox access token using TOTP and PIN.
+ * POST https://api.upstox.com/v2/totp-login/authorization/token
+ */
+export async function loginViaTotp(apiKey: string, pin: string, totp: string) {
+  const cleanKey = apiKey.trim();
+  const cleanPin = pin.trim();
+  const cleanTotp = totp.trim();
+
+  if (!cleanKey) throw new Error('API Key is required');
+  if (cleanPin.length !== 6) throw new Error("The 'pin' must be exactly 6 digits");
+  if (cleanTotp.length !== 6) throw new Error("The 'totp' must be exactly 6 digits");
+
+  const res = await fetch('https://api.upstox.com/v2/totp-login/authorization/token', {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'Content-Type': 'application/json',
+      'x-api-key': cleanKey,
+    },
+    body: JSON.stringify({
+      totp: cleanTotp,
+      pin: cleanPin,
+    }),
+  });
+
+  const json = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    const errMsg = json?.errors?.[0]?.message || json?.message || `Upstox TOTP Login failed (${res.status})`;
+    throw new Error(errMsg);
+  }
+
+  const accessToken = json.access_token;
+  if (!accessToken) {
+    throw new Error('No access_token returned by Upstox');
+  }
+
+  setServerSession({
+    accessToken,
+    extendedToken: json.extended_token,
+    userId: json.user_id,
+    userName: json.user_name,
+    email: json.email,
+    expiresAt: '3:30 AM',
+    source: 'totp',
+    updatedAt: Date.now(),
+  });
+
+  return {
+    userName: json.user_name,
+    userId: json.user_id,
+    email: json.email,
+  };
+}
+
+/**
+ * Acquire Upstox access token using authorization code.
+ * POST https://api.upstox.com/v2/login/authorization/token
+ */
+export async function loginViaAuthCode(code: string, clientId: string, clientSecret: string, redirectUri: string) {
+  const res = await fetch('https://api.upstox.com/v2/login/authorization/token', {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      code: code.trim(),
+      client_id: clientId.trim(),
+      client_secret: clientSecret.trim(),
+      redirect_uri: redirectUri.trim(),
+      grant_type: 'authorization_code',
+    }),
+  });
+
+  const json = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    const errMsg = json?.errors?.[0]?.message || json?.message || `Upstox Auth Code Login failed (${res.status})`;
+    throw new Error(errMsg);
+  }
+
+  const accessToken = json.access_token;
+  if (!accessToken) {
+    throw new Error('No access_token returned by Upstox');
+  }
+
+  setServerSession({
+    accessToken,
+    extendedToken: json.extended_token,
+    userId: json.user_id,
+    userName: json.user_name,
+    email: json.email,
+    expiresAt: '3:30 AM',
+    source: 'code',
+    updatedAt: Date.now(),
+  });
+
+  return {
+    userName: json.user_name,
+    userId: json.user_id,
+    email: json.email,
+  };
+}
+
+/**
+ * Directly set token (e.g. Analytics Token or Access Token pasted by user).
+ */
+export async function setTokenDirect(rawToken: string) {
+  const clean = rawToken.trim();
+  if (!clean) throw new Error('Token cannot be empty');
+
+  let userName: string | undefined;
+  let userId: string | undefined;
+  let email: string | undefined;
+
+  try {
+    const profileRes = await fetch('https://api.upstox.com/v2/user/profile', {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${clean}`,
+      },
+    });
+    if (profileRes.ok) {
+      const pJson = await profileRes.json();
+      if (pJson.status === 'success' && pJson.data) {
+        userName = pJson.data.user_name;
+        userId = pJson.data.user_id;
+        email = pJson.data.email;
+      }
+    }
+  } catch {
+    // profile check is non-fatal for 1-year Analytics tokens
+  }
+
+  setServerSession({
+    accessToken: clean,
+    userName,
+    userId,
+    email,
+    source: 'manual',
+    updatedAt: Date.now(),
+  });
+
+  return {
+    userName,
+    userId,
+    email,
+  };
+}
+
+export interface LiveQuote {
+  key: string;
+  symbol: string;
+  lastPrice: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  change: number;
+  changePct: number;
+  timestamp: number;
+}
+
+/**
+ * Fetches real-time live market quote for an instrument from Upstox API v2.
+ * GET https://api.upstox.com/v2/market-quote/quotes?instrument_key={key}
+ */
+export async function getMarketQuote(instrumentKey: string): Promise<LiveQuote | null> {
+  const token = getActiveToken();
+  if (!token) {
+    throw new Error('UPSTOX_TOKEN secret not set');
+  }
+
+  const encodedKey = encodeURIComponent(instrumentKey);
+  const url = `https://api.upstox.com/v2/market-quote/quotes?instrument_key=${encodedKey}`;
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      // If full quote is restricted or error, try LTP endpoint
+      const ltpUrl = `https://api.upstox.com/v2/market-quote/ltp?instrument_key=${encodedKey}`;
+      const ltpRes = await fetch(ltpUrl, {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (ltpRes.ok) {
+        const ltpJson = await ltpRes.json();
+        const first = Object.values(ltpJson?.data || {})[0] as any;
+        if (first && typeof first.last_price === 'number') {
+          return {
+            key: instrumentKey,
+            symbol: first.trading_symbol || instrumentKey.split('|')[1] || instrumentKey,
+            lastPrice: first.last_price,
+            open: first.last_price,
+            high: first.last_price,
+            low: first.last_price,
+            close: first.last_price,
+            volume: 0,
+            change: 0,
+            changePct: 0,
+            timestamp: Date.now(),
+          };
+        }
+      }
+      return null;
+    }
+
+    const json = await res.json();
+    if (json.status !== 'success' || !json.data) return null;
+
+    const dataObj = json.data;
+    const item = Object.values(dataObj)[0] as any;
+    if (!item) return null;
+
+    const lastPrice = Number(item.last_price) || 0;
+    const ohlc = item.ohlc || {};
+    const open = Number(ohlc.open) || lastPrice;
+    const high = Number(ohlc.high) || lastPrice;
+    const low = Number(ohlc.low) || lastPrice;
+    const prevClose = Number(ohlc.close) || lastPrice;
+    const volume = Number(item.volume) || 0;
+    const change = Number(item.net_change ?? (lastPrice - prevClose));
+    const changePct = prevClose > 0 ? (change / prevClose) * 100 : 0;
+    const timestamp = item.timestamp ? new Date(item.timestamp).getTime() : Date.now();
+
+    return {
+      key: instrumentKey,
+      symbol: item.trading_symbol || instrumentKey.split('|')[1] || instrumentKey,
+      lastPrice,
+      open,
+      high,
+      low,
+      close: lastPrice,
+      volume,
+      change,
+      changePct,
+      timestamp,
+    };
+  } catch (err) {
+    console.warn(`Error fetching market quote for ${instrumentKey}:`, err);
+    return null;
+  }
+}
+
 
 // Pre-seeded high quality equity & index symbols so search works instantaneously
 const PRESEEDED_INSTRUMENTS: Instrument[] = [
@@ -312,7 +648,7 @@ export async function getHistoricalCandles(
   toDate: string
 ): Promise<{ candles: Candle[]; cached: boolean; durationMs: number }> {
   const startTime = Date.now();
-  const token = process.env.UPSTOX_TOKEN;
+  const token = getActiveToken();
 
   // Hard Rule 1: Secrets must be set on server. Never send token.
   if (!token) {

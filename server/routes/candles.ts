@@ -1,7 +1,34 @@
 import { Router } from 'express';
-import { getHistoricalCandles } from '../upstox/client.js';
+import { getHistoricalCandles, getMarketQuote } from '../upstox/client.js';
 
 export const candlesRouter = Router();
+
+candlesRouter.get('/quote', async (req, res) => {
+  const key = req.query.key as string;
+  if (!key) {
+    res.status(400).json({ ok: false, error: 'Query parameter "key" is required' });
+    return;
+  }
+
+  try {
+    const quote = await getMarketQuote(key);
+    if (!quote) {
+      res.status(404).json({ ok: false, error: 'Market quote unavailable for symbol' });
+      return;
+    }
+    res.json({
+      ok: true,
+      quote,
+    });
+  } catch (err: any) {
+    const message = err?.message || 'Failed to fetch market quote';
+    const status = message.includes('UPSTOX_TOKEN secret not set') ? 503 : 500;
+    res.status(status).json({
+      ok: false,
+      error: message,
+    });
+  }
+});
 
 candlesRouter.get('/candles', async (req, res) => {
   const key = req.query.key as string;
@@ -55,3 +82,4 @@ candlesRouter.get('/candles', async (req, res) => {
     });
   }
 });
+

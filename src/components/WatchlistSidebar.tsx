@@ -19,6 +19,24 @@ export const WatchlistSidebar: React.FC = () => {
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [newSymbolInput, setNewSymbolInput] = useState('');
+  const [watchlistSort, setWatchlistSort] = useState<'default' | 'gainers' | 'losers' | 'symbol' | 'price'>('default');
+
+  const sortedWatchlist = React.useMemo(() => {
+    const list = [...watchlist];
+    if (watchlistSort === 'gainers') {
+      return list.sort((a, b) => b.changePct - a.changePct);
+    }
+    if (watchlistSort === 'losers') {
+      return list.sort((a, b) => a.changePct - b.changePct);
+    }
+    if (watchlistSort === 'symbol') {
+      return list.sort((a, b) => a.symbol.localeCompare(b.symbol));
+    }
+    if (watchlistSort === 'price') {
+      return list.sort((a, b) => b.lastPrice - a.lastPrice);
+    }
+    return list;
+  }, [watchlist, watchlistSort]);
 
   if (!isWatchlistOpen) return null;
 
@@ -26,19 +44,33 @@ export const WatchlistSidebar: React.FC = () => {
     <aside className="w-64 bg-[#12161C] border-l border-[#1F2630] flex flex-col shrink-0 select-none z-20">
       {/* Header */}
       <div className="h-9 border-b border-[#1F2630] px-3 flex items-center justify-between">
-        <span className="text-xs font-semibold text-[#E6EDF3] tracking-wide uppercase">
-          Watchlist
-        </span>
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] font-mono text-[#8B949E] px-1.5 py-0.5 bg-[#181D25] rounded">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-semibold text-[#E6EDF3] tracking-wide uppercase">
+            Watchlist
+          </span>
+          <span className="text-[10px] font-mono text-[#8B949E] px-1.5 py-0.2 bg-[#181D25] rounded border border-[#1F2630]">
             {watchlist.length}
           </span>
         </div>
+
+        {/* Sort Select */}
+        <select
+          value={watchlistSort}
+          onChange={(e) => setWatchlistSort(e.target.value as any)}
+          className="bg-[#181D25] border border-[#1F2630] rounded px-1.5 py-0.5 text-[10px] text-[#8B949E] hover:text-[#E6EDF3] focus:border-[#F0B90B] focus:outline-none cursor-pointer"
+          title="Sort watchlist items"
+        >
+          <option value="default">Default Order</option>
+          <option value="gainers">Top Gainers (%)</option>
+          <option value="losers">Top Losers (%)</option>
+          <option value="symbol">Symbol (A-Z)</option>
+          <option value="price">Highest Price</option>
+        </select>
       </div>
 
       {/* Watchlist Items */}
       <div className="flex-1 overflow-y-auto divide-y divide-[#1F2630]/60">
-        {watchlist.map((item) => {
+        {sortedWatchlist.map((item) => {
           const isSelected = selectedInstrument.symbol === item.symbol;
           const isPositive = item.change >= 0;
 

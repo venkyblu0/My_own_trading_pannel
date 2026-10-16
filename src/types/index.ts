@@ -7,6 +7,20 @@ export interface Candle {
   volume: number;
 }
 
+export interface LiveQuote {
+  key: string;
+  symbol: string;
+  lastPrice: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  change: number;
+  changePct: number;
+  timestamp: number;
+}
+
 export type Exchange = 'NSE' | 'BSE' | 'NSE INDICES' | 'MCX';
 
 export interface Instrument {

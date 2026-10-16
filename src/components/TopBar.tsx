@@ -12,6 +12,7 @@ import {
   TrendingDown,
   Activity,
   KeyRound,
+  Loader2,
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore.ts';
 import { SymbolSearch } from './SymbolSearch.tsx';
@@ -46,6 +47,11 @@ export const TopBar: React.FC = () => {
     isWatchlistOpen,
     toggleWatchlist,
     isTokenSet,
+    openAuthModal,
+    openIndicatorsModal,
+    openStrategiesModal,
+    runStrategyBacktest,
+    setBottomPanelTab,
     isLoadingCandles,
   } = useAppStore();
 
@@ -179,31 +185,48 @@ export const TopBar: React.FC = () => {
           )}
         </div>
 
-        {/* Indicators Shell */}
+        {/* Indicators Button */}
         <button
-          className="flex items-center gap-1 px-2.5 py-1 bg-[#181D25] hover:bg-[#1F2630] border border-[#1F2630] rounded text-xs text-[#E6EDF3] transition-colors"
+          onClick={openIndicatorsModal}
+          className="flex items-center gap-1.5 px-2.5 py-1 bg-[#181D25] hover:bg-[#1F2630] border border-[#1F2630] rounded text-xs text-[#E6EDF3] transition-colors cursor-pointer"
           title="Indicators (SMA, EMA, RSI, MACD...)"
         >
-          <SlidersHorizontal className="w-3.5 h-3.5 text-[#8B949E]" />
+          <SlidersHorizontal className="w-3.5 h-3.5 text-[#F0B90B]" />
           <span className="hidden sm:inline">Indicators</span>
         </button>
 
-        {/* Strategies Shell */}
+        {/* Strategies Button */}
         <button
-          className="flex items-center gap-1 px-2.5 py-1 bg-[#181D25] hover:bg-[#1F2630] border border-[#1F2630] rounded text-xs text-[#E6EDF3] transition-colors"
-          title="Strategies (SMA44 Pullback...)"
+          onClick={openStrategiesModal}
+          className="flex items-center gap-1 px-2.5 py-1 bg-[#181D25] hover:bg-[#1F2630] border border-[#1F2630] rounded text-xs text-[#E6EDF3] transition-colors cursor-pointer"
+          title="Configure & Select Trading Strategies"
         >
-          <Layers className="w-3.5 h-3.5 text-[#8B949E]" />
+          <Layers className="w-3.5 h-3.5 text-[#F0B90B]" />
           <span className="hidden sm:inline">Strategies</span>
         </button>
 
-        {/* Replay/Backtest button Shell */}
+        {/* Replay/Backtest Button */}
         <button
-          className="flex items-center gap-1 px-2.5 py-1 bg-[#181D25] hover:bg-[#1F2630] border border-[#1F2630] rounded text-xs text-[#E6EDF3] transition-colors"
-          title="Backtest Strategy"
+          onClick={() => {
+            setBottomPanelTab('strategy_tester');
+            runStrategyBacktest();
+          }}
+          disabled={useAppStore.getState().isBacktesting}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-all cursor-pointer border ${
+            useAppStore.getState().isBacktesting
+              ? 'bg-[#F0B90B]/20 text-[#F0B90B] border-[#F0B90B]/50 cursor-wait'
+              : 'bg-[#181D25] hover:bg-[#1F2630] border-[#1F2630] text-[#E6EDF3] active:scale-95'
+          }`}
+          title="Run Strategy Backtester"
         >
-          <Play className="w-3.5 h-3.5 text-[#8B949E]" />
-          <span className="hidden lg:inline">Backtest</span>
+          {useAppStore.getState().isBacktesting ? (
+            <Loader2 className="w-3.5 h-3.5 text-[#F0B90B] animate-spin" />
+          ) : (
+            <Play className="w-3.5 h-3.5 text-[#26A69A] fill-current" />
+          )}
+          <span className="hidden lg:inline font-medium">
+            {useAppStore.getState().isBacktesting ? 'Backtesting...' : 'Backtest'}
+          </span>
         </button>
 
         {/* Layout Save/Load Shell */}
@@ -214,18 +237,19 @@ export const TopBar: React.FC = () => {
           <Save className="w-3.5 h-3.5" />
         </button>
 
-        {/* Upstox Token Status Indicator */}
-        <div
-          className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-mono border ${
+        {/* Upstox Token Connect / Status Button */}
+        <button
+          onClick={openAuthModal}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-mono border transition-all cursor-pointer ${
             isTokenSet
-              ? 'bg-[#132B25] text-[#26A69A] border-[#26A69A]/30'
-              : 'bg-[#2E1A17] text-[#F0B90B] border-[#F0B90B]/30'
+              ? 'bg-[#132B25] hover:bg-[#1A3831] text-[#26A69A] border-[#26A69A]/40'
+              : 'bg-[#F0B90B] hover:bg-[#d9a70a] text-[#0B0E11] font-bold border-[#F0B90B] shadow-sm animate-pulse'
           }`}
-          title={isTokenSet ? 'Upstox Token Active' : 'UPSTOX_TOKEN Secret not set in Settings -> Secrets'}
+          title={isTokenSet ? 'Upstox Connected - Click to view/manage' : 'Click to connect Upstox with Token, TOTP or Auth Code'}
         >
-          <KeyRound className="w-3 h-3" />
-          <span className="hidden xl:inline">{isTokenSet ? 'Token Active' : 'Token Missing'}</span>
-        </div>
+          <KeyRound className="w-3.5 h-3.5" />
+          <span>{isTokenSet ? 'Upstox Active' : 'Connect Upstox'}</span>
+        </button>
 
         {/* Watchlist Toggle */}
         <button

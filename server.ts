@@ -6,6 +6,7 @@ import { healthRouter } from './server/routes/health.js';
 import { instrumentsRouter } from './server/routes/instruments.js';
 import { candlesRouter } from './server/routes/candles.js';
 import { logsRouter } from './server/routes/logs.js';
+import { authRouter } from './server/routes/auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,6 +24,7 @@ async function startServer() {
   app.use('/api', instrumentsRouter);
   app.use('/api', candlesRouter);
   app.use('/api', logsRouter);
+  app.use('/api', authRouter);
 
   if (!isProduction) {
     // In dev mode, integrate Vite dev server via middleware

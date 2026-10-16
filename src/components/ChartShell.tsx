@@ -11,6 +11,7 @@ export const ChartShell: React.FC = () => {
     isLoadingCandles,
     candleError,
     isTokenSet,
+    openAuthModal,
     lastClose,
     priceChange,
     priceChangePct,
@@ -84,16 +85,23 @@ export const ChartShell: React.FC = () => {
                   {candleError}
                 </p>
                 {!isTokenSet && (
-                  <div className="p-3 bg-[#12161C] border border-[#1F2630] rounded text-xs space-y-2">
-                    <div className="flex items-center gap-1.5 text-[#F0B90B] font-medium">
-                      <KeyRound className="w-3.5 h-3.5" />
-                      <span>Setup Required: UPSTOX_TOKEN</span>
+                  <div className="p-3 bg-[#12161C] border border-[#1F2630] rounded text-xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-[#F0B90B] font-medium">
+                        <KeyRound className="w-3.5 h-3.5" />
+                        <span>Upstox Connection Required</span>
+                      </div>
                     </div>
-                    <ol className="text-[11px] text-[#8B949E] list-decimal list-inside space-y-1">
-                      <li>Open <strong className="text-[#E6EDF3]">Settings → Secrets</strong> in AI Studio.</li>
-                      <li>Add key <code className="text-[#F0B90B] bg-[#181D25] px-1 py-0.5 rounded">UPSTOX_TOKEN</code> with your Analytics token.</li>
-                      <li>Data calls will automatically stream real candles.</li>
-                    </ol>
+                    <p className="text-[11px] text-[#8B949E] leading-normal">
+                      Connect your Upstox account using your 1-Year Analytics Token, daily TOTP & PIN, or OAuth Auth Code to load historical candles.
+                    </p>
+                    <button
+                      onClick={openAuthModal}
+                      className="w-full py-2 bg-[#F0B90B] hover:bg-[#d9a70a] text-[#0B0E11] font-bold rounded text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow"
+                    >
+                      <KeyRound className="w-3.5 h-3.5" />
+                      <span>Connect Upstox Account</span>
+                    </button>
                   </div>
                 )}
               </div>

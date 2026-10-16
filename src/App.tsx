@@ -1,10 +1,14 @@
 import React, { useEffect } from 'react';
 import { TopBar } from './components/TopBar.tsx';
 import { LeftToolbar } from './components/LeftToolbar.tsx';
-import { ChartShell } from './components/ChartShell.tsx';
+import { ChartPane } from './components/ChartPane.tsx';
 import { WatchlistSidebar } from './components/WatchlistSidebar.tsx';
 import { BottomPanel } from './components/BottomPanel.tsx';
 import { StatusBar } from './components/StatusBar.tsx';
+import { ConnectUpstoxModal } from './components/ConnectUpstoxModal.tsx';
+import { IndicatorsModal } from './components/IndicatorsModal.tsx';
+import { StrategiesModal } from './components/StrategiesModal.tsx';
+import { AboutModal } from './components/AboutModal.tsx';
 import { useAppStore } from './store/useAppStore.ts';
 
 export default function App() {
@@ -26,8 +30,8 @@ export default function App() {
         {/* Left Drawing Toolbar */}
         <LeftToolbar />
 
-        {/* Center Chart Pane (Phase 1 shell, Phase 2 KLineChart canvas) */}
-        <ChartShell />
+        {/* Center Interactive Chart Pane (KLineChart) */}
+        <ChartPane />
 
         {/* Collapsible Right Watchlist Sidebar */}
         <WatchlistSidebar />
@@ -38,6 +42,12 @@ export default function App() {
 
       {/* Persistent Status Bar */}
       <StatusBar />
+
+      {/* Modals & Dialogs */}
+      <ConnectUpstoxModal />
+      <IndicatorsModal />
+      <StrategiesModal />
+      <AboutModal />
     </div>
   );
 }

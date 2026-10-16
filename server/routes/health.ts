@@ -1,11 +1,19 @@
 import { Router } from 'express';
+import { getActiveToken, getSessionStatus } from '../upstox/client.js';
 
 export const healthRouter = Router();
 
 healthRouter.get('/health', (_req, res) => {
-  const tokenSet = Boolean(process.env.UPSTOX_TOKEN && process.env.UPSTOX_TOKEN.trim().length > 0);
+  const token = getActiveToken();
+  const tokenSet = Boolean(token && token.trim().length > 0);
+  const status = getSessionStatus();
+
   res.json({
     ok: true,
     tokenSet,
+    userName: status.userName,
+    userId: status.userId,
+    source: status.source,
+    expiresAt: status.expiresAt,
   });
 });

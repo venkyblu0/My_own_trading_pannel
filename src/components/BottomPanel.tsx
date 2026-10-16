@@ -12,10 +12,17 @@ import {
   XCircle,
   Clock,
   HardDrive,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore.ts';
 import { BottomPanelTab } from '../types/index.ts';
 import { formatISTTime } from '../lib/formatters.ts';
+import { StrategyTesterTab } from './bottom-panel/StrategyTesterTab.tsx';
+import { SignalsTab } from './bottom-panel/SignalsTab.tsx';
+import { TradesTab } from './bottom-panel/TradesTab.tsx';
+import { ScannerTab } from './bottom-panel/ScannerTab.tsx';
 
 export const BottomPanel: React.FC = () => {
   const {
@@ -27,13 +34,55 @@ export const BottomPanel: React.FC = () => {
     setBottomPanelHeight,
     logs,
     fetchLogs,
+    backtestResult,
+    scannerResults,
   } = useAppStore();
 
   const [isDragging, setIsDragging] = useState(false);
   const dragStartYRef = useRef(0);
   const dragStartHeightRef = useRef(0);
+  const [logSortField, setLogSortField] = useState<'timestamp' | 'symbol' | 'timeframe' | 'candleCount' | 'durationMs' | 'status'>('timestamp');
+  const [logSortOrder, setLogSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  // Auto fetch logs on mount and when tab is logs
+  const handleLogSort = (field: 'timestamp' | 'symbol' | 'timeframe' | 'candleCount' | 'durationMs' | 'status') => {
+    if (logSortField === field) {
+      setLogSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setLogSortField(field);
+      if (field === 'symbol' || field === 'status') {
+        setLogSortOrder('asc');
+      } else {
+        setLogSortOrder('desc');
+      }
+    }
+  };
+
+  const sortedLogs = React.useMemo(() => {
+    return [...logs].sort((a, b) => {
+      let valA: any = a[logSortField];
+      let valB: any = b[logSortField];
+
+      if (typeof valA === 'string') {
+        return logSortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      valA = Number(valA) || 0;
+      valB = Number(valB) || 0;
+      return logSortOrder === 'asc' ? (valA > valB ? 1 : -1) : (valA < valB ? 1 : -1);
+    });
+  }, [logs, logSortField, logSortOrder]);
+
+  const renderLogSortIcon = (field: 'timestamp' | 'symbol' | 'timeframe' | 'candleCount' | 'durationMs' | 'status') => {
+    if (logSortField !== field) {
+      return <ArrowUpDown className="w-2.5 h-2.5 text-[#8B949E]/40 group-hover:text-[#8B949E] transition-colors" />;
+    }
+    return logSortOrder === 'asc' ? (
+      <ArrowUp className="w-2.5 h-2.5 text-[#F0B90B]" />
+    ) : (
+      <ArrowDown className="w-2.5 h-2.5 text-[#F0B90B]" />
+    );
+  };
+
+  // Auto fetch logs on mount
   useEffect(() => {
     fetchLogs();
     const interval = setInterval(fetchLogs, 5000);
@@ -73,12 +122,36 @@ export const BottomPanel: React.FC = () => {
     };
   }, [isDragging]);
 
-  const tabs: { id: BottomPanelTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'strategy_tester', label: 'Strategy Tester', icon: <Activity className="w-3.5 h-3.5" /> },
-    { id: 'signals', label: 'Signals', icon: <Radio className="w-3.5 h-3.5" /> },
-    { id: 'trades', label: 'Trades', icon: <GitCommit className="w-3.5 h-3.5" /> },
-    { id: 'scanner', label: 'Scanner', icon: <Terminal className="w-3.5 h-3.5" /> },
-    { id: 'logs', label: `Logs (${logs.length})`, icon: <FileText className="w-3.5 h-3.5" /> },
+  const tabs: { id: BottomPanelTab; label: string; count?: number; icon: React.ReactNode }[] = [
+    {
+      id: 'strategy_tester',
+      label: 'Strategy Tester',
+      icon: <Activity className="w-3.5 h-3.5" />,
+    },
+    {
+      id: 'signals',
+      label: 'Signals',
+      count: backtestResult?.signals?.length,
+      icon: <Radio className="w-3.5 h-3.5" />,
+    },
+    {
+      id: 'trades',
+      label: 'Trades',
+      count: backtestResult?.trades?.length,
+      icon: <GitCommit className="w-3.5 h-3.5" />,
+    },
+    {
+      id: 'scanner',
+      label: 'Scanner',
+      count: scannerResults?.length,
+      icon: <Terminal className="w-3.5 h-3.5" />,
+    },
+    {
+      id: 'logs',
+      label: 'Logs',
+      count: logs.length,
+      icon: <FileText className="w-3.5 h-3.5" />,
+    },
   ];
 
   return (
@@ -104,7 +177,7 @@ export const BottomPanel: React.FC = () => {
               <button
                 key={tab.id}
                 onClick={() => setBottomPanelTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-1 text-xs rounded transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1 text-xs rounded transition-colors cursor-pointer ${
                   isActive
                     ? 'bg-[#181D25] text-[#F0B90B] font-semibold border-b-2 border-[#F0B90B]'
                     : 'text-[#8B949E] hover:text-[#E6EDF3] hover:bg-[#181D25]/50'
@@ -112,6 +185,15 @@ export const BottomPanel: React.FC = () => {
               >
                 {tab.icon}
                 <span>{tab.label}</span>
+                {typeof tab.count === 'number' && tab.count > 0 && (
+                  <span
+                    className={`text-[9px] px-1 py-0.2 rounded-full font-mono ${
+                      isActive ? 'bg-[#F0B90B]/20 text-[#F0B90B]' : 'bg-[#1F2630] text-[#8B949E]'
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -121,7 +203,7 @@ export const BottomPanel: React.FC = () => {
           {bottomPanelTab === 'logs' && (
             <button
               onClick={() => fetchLogs()}
-              className="p-1 text-[#8B949E] hover:text-[#E6EDF3] hover:bg-[#181D25] rounded transition-colors"
+              className="p-1 text-[#8B949E] hover:text-[#E6EDF3] hover:bg-[#181D25] rounded transition-colors cursor-pointer"
               title="Refresh logs"
             >
               <RefreshCw className="w-3 h-3" />
@@ -129,7 +211,7 @@ export const BottomPanel: React.FC = () => {
           )}
           <button
             onClick={toggleBottomPanel}
-            className="p-1 text-[#8B949E] hover:text-[#E6EDF3] hover:bg-[#181D25] rounded transition-colors"
+            className="p-1 text-[#8B949E] hover:text-[#E6EDF3] hover:bg-[#181D25] rounded transition-colors cursor-pointer"
             title={isBottomPanelCollapsed ? 'Expand panel' : 'Collapse panel'}
           >
             {isBottomPanelCollapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -139,9 +221,14 @@ export const BottomPanel: React.FC = () => {
 
       {/* Content Area */}
       {!isBottomPanelCollapsed && (
-        <div className="flex-1 bg-[#0B0E11] overflow-y-auto font-mono text-xs">
-          {bottomPanelTab === 'logs' ? (
-            <div className="p-2">
+        <div className="flex-1 bg-[#0B0E11] overflow-hidden flex flex-col min-h-0">
+          {bottomPanelTab === 'strategy_tester' && <StrategyTesterTab />}
+          {bottomPanelTab === 'signals' && <SignalsTab />}
+          {bottomPanelTab === 'trades' && <TradesTab />}
+          {bottomPanelTab === 'scanner' && <ScannerTab />}
+
+          {bottomPanelTab === 'logs' && (
+            <div className="p-2 overflow-y-auto font-mono text-xs h-full">
               {logs.length === 0 ? (
                 <div className="p-6 text-center text-[#8B949E] text-xs">
                   No data request logs recorded yet. Search a symbol or change timeframes to view Upstox server queries.
@@ -149,20 +236,68 @@ export const BottomPanel: React.FC = () => {
               ) : (
                 <div className="border border-[#1F2630] rounded overflow-hidden">
                   <table className="w-full text-left text-[11px] divide-y divide-[#1F2630]">
-                    <thead className="bg-[#181D25] text-[#8B949E] uppercase text-[10px]">
+                    <thead className="bg-[#181D25] text-[#8B949E] uppercase text-[10px] select-none">
                       <tr>
-                        <th className="py-1.5 px-3">Status</th>
-                        <th className="py-1.5 px-3">Time (IST)</th>
-                        <th className="py-1.5 px-3">Instrument Key</th>
-                        <th className="py-1.5 px-3">TF</th>
+                        <th
+                          onClick={() => handleLogSort('status')}
+                          className="py-1.5 px-3 cursor-pointer hover:bg-[#1F2630]/60 transition-colors"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Status</span>
+                            {renderLogSortIcon('status')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleLogSort('timestamp')}
+                          className="py-1.5 px-3 cursor-pointer hover:bg-[#1F2630]/60 transition-colors"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Time (IST)</span>
+                            {renderLogSortIcon('timestamp')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleLogSort('symbol')}
+                          className="py-1.5 px-3 cursor-pointer hover:bg-[#1F2630]/60 transition-colors"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Instrument Key</span>
+                            {renderLogSortIcon('symbol')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleLogSort('timeframe')}
+                          className="py-1.5 px-3 cursor-pointer hover:bg-[#1F2630]/60 transition-colors"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>TF</span>
+                            {renderLogSortIcon('timeframe')}
+                          </div>
+                        </th>
                         <th className="py-1.5 px-3">Range</th>
-                        <th className="py-1.5 px-3">Candles</th>
-                        <th className="py-1.5 px-3">Latency</th>
+                        <th
+                          onClick={() => handleLogSort('candleCount')}
+                          className="py-1.5 px-3 cursor-pointer hover:bg-[#1F2630]/60 transition-colors"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Candles</span>
+                            {renderLogSortIcon('candleCount')}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleLogSort('durationMs')}
+                          className="py-1.5 px-3 cursor-pointer hover:bg-[#1F2630]/60 transition-colors"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Latency</span>
+                            {renderLogSortIcon('durationMs')}
+                          </div>
+                        </th>
                         <th className="py-1.5 px-3">Source</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#1F2630]/60 text-[#E6EDF3]">
-                      {logs.map((log) => (
+                      {sortedLogs.map((log) => (
                         <tr key={log.id} className="hover:bg-[#181D25]/40 transition-colors">
                           <td className="py-1.5 px-3">
                             {log.status === 'ok' ? (
@@ -210,17 +345,6 @@ export const BottomPanel: React.FC = () => {
                   </table>
                 </div>
               )}
-            </div>
-          ) : (
-            <div className="p-8 text-center text-[#8B949E]">
-              <div className="max-w-md mx-auto bg-[#12161C] border border-[#1F2630] p-6 rounded">
-                <div className="text-sm font-semibold text-[#E6EDF3] mb-1 capitalize">
-                  {bottomPanelTab.replace('_', ' ')} Module
-                </div>
-                <p className="text-xs text-[#8B949E] leading-relaxed">
-                  Phase 1 shell active. This module will be wired in Phase 3 (Strategy & Signals) and Phase 4 (Single-stock backtester & performance analytics).
-                </p>
-              </div>
             </div>
           )}
         </div>
