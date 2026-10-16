@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Upstox login token and candle cache, written at runtime
+server/cache/
